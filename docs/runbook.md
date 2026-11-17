@@ -35,6 +35,29 @@ One machine, a few minutes. Nothing else is worth starting before this passes.
 uv run swce-evaluate --subject swce.models:llava_15 --tasks pope-adversarial chair mme --limit 16
 ```
 
+## The main experiment in one command
+
+`experiments/main.py` runs the experiment the sections below spell out, on one model. It
+evaluates VTI and REVIS, each with its random control, next to the unmodified model, on POPE
+adversarial with its RePOPE labels, on CHAIR and on MME, records the logit lens, measures the
+residual shift on fifty images and scores everything. It continues where an earlier run stopped.
+
+```bash
+uv run python experiments/main.py --model llava_15 --limit 16   # smoke test
+uv run python experiments/main.py --model llava_15
+```
+
+Its three jobs can run side by side on one results folder, scored once at the end.
+
+```bash
+uv run python experiments/main.py --model llava_15 --jobs baseline --no-score
+uv run python experiments/main.py --model llava_15 --jobs vti --no-score
+uv run python experiments/main.py --model llava_15 --jobs revis --no-score
+uv run python experiments/main.py --model llava_15 --score-only
+```
+
+`--model` also takes `qwen3_vl_8b`, `llava_onevision_15_8b` and `llava_15_rehearsal`.
+
 ## 2. Jobs
 
 Each line is one job. `--generate-only` writes answers and scores nothing, and `--lens` records
