@@ -91,7 +91,7 @@ known-first-party = ["swce"]
 
 [tool.mypy]
 strict = true
-files = ["src", "tests", "methods"]
+files = ["src", "tests", "methods", "experiments"]
 mypy_path = ["src", "tests"]
 explicit_package_bases = true
 
