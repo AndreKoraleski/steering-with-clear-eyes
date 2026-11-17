@@ -1,0 +1,319 @@
+{
+  "version": 1,
+  "benchmarks": [
+    {
+      "key": "coco-2014",
+      "name": "COCO 2014",
+      "reference": "Lin et al., Microsoft COCO: Common Objects in Context, ECCV 2014",
+      "source": "https://cocodataset.org",
+      "licence": "Annotations CC BY 4.0. Images under the Flickr terms of use, with the licence of each image listed in the annotations.",
+      "terms": "Images are fetched one by one from the official host and never redistributed. The host publishes no checksum of single images, so they are not pinned.",
+      "image_url": "http://images.cocodataset.org/val2014/{name}",
+      "image_dir": "coco/val2014",
+      "files": [
+        {
+          "path": "coco/annotations_trainval2014.zip",
+          "url": "http://images.cocodataset.org/annotations/annotations_trainval2014.zip",
+          "size": 252872794,
+          "digest": "0a379cfc70b0e71301e0f377548639bd",
+          "algorithm": "md5"
+        }
+      ]
+    },
+    {
+      "key": "coco-train2014",
+      "name": "COCO 2014 training images",
+      "reference": "Lin et al., Microsoft COCO: Common Objects in Context, ECCV 2014",
+      "source": "https://cocodataset.org",
+      "licence": "Images under the Flickr terms of use.",
+      "terms": "No task reads these images. Steering methods fit their directions and calibrate their thresholds on them, and each image is fetched from the official host when a method names it.",
+      "image_url": "http://images.cocodataset.org/train2014/{name}",
+      "image_dir": "coco/train2014"
+    },
+    {
+      "key": "pope",
+      "name": "POPE",
+      "reference": "Li et al., Evaluating Object Hallucination in Large Vision-Language Models, EMNLP 2023",
+      "source": "https://github.com/RUCAIBox/POPE",
+      "revision": "08d957b917e5a378a2f99d35b6293c536a66298b",
+      "licence": "MIT",
+      "terms": "Question files are downloaded from the official repository. Copies in other repositories differ and are not used.",
+      "files": [
+        {
+          "path": "pope/coco_pope_random.json",
+          "url": "https://raw.githubusercontent.com/RUCAIBox/POPE/08d957b917e5a378a2f99d35b6293c536a66298b/output/coco/coco_pope_random.json",
+          "size": 368166,
+          "digest": "ac25245170b975a5bdf9080b23fd431dfe6be458bc038259c1f4f09a6bef7994"
+        },
+        {
+          "path": "pope/coco_pope_popular.json",
+          "url": "https://raw.githubusercontent.com/RUCAIBox/POPE/08d957b917e5a378a2f99d35b6293c536a66298b/output/coco/coco_pope_popular.json",
+          "size": 370190,
+          "digest": "72c1a8ad45d0c13514f5f22598261df41d3b533854d29682e924db50ed8aa753"
+        },
+        {
+          "path": "pope/coco_pope_adversarial.json",
+          "url": "https://raw.githubusercontent.com/RUCAIBox/POPE/08d957b917e5a378a2f99d35b6293c536a66298b/output/coco/coco_pope_adversarial.json",
+          "size": 370401,
+          "digest": "420b3407db1fa9f1187a805dca41cb7b97fd91504e6c2179706188c107fb8ef8"
+        }
+      ],
+      "tasks": [
+        {
+          "key": "pope-random",
+          "kind": "yes_no",
+          "description": "Object presence questions on 500 COCO val2014 images, with absent objects drawn at random.",
+          "loader": "pope",
+          "scorer": "pope",
+          "primary": "f1",
+          "max_new_tokens": 64,
+          "files": [
+            "pope/coco_pope_random.json"
+          ],
+          "requires": [
+            "coco-2014"
+          ]
+        },
+        {
+          "key": "pope-popular",
+          "kind": "yes_no",
+          "description": "Object presence questions on 500 COCO val2014 images, with absent objects drawn among the most frequent ones.",
+          "loader": "pope",
+          "scorer": "pope",
+          "primary": "f1",
+          "max_new_tokens": 64,
+          "files": [
+            "pope/coco_pope_popular.json"
+          ],
+          "requires": [
+            "coco-2014"
+          ]
+        },
+        {
+          "key": "pope-adversarial",
+          "kind": "yes_no",
+          "description": "Object presence questions on 500 COCO val2014 images, with absent objects that co-occur most with the present ones.",
+          "loader": "pope",
+          "scorer": "pope",
+          "primary": "f1",
+          "max_new_tokens": 64,
+          "files": [
+            "pope/coco_pope_adversarial.json"
+          ],
+          "requires": [
+            "coco-2014"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "repope",
+      "name": "RePOPE",
+      "reference": "Neuhaus and Hein, RePOPE: Impact of Annotation Errors on the POPE Benchmark, arXiv 2504.15707",
+      "source": "https://github.com/YanNeu/RePOPE",
+      "revision": "bcf22e5690d587cce34e1728af3efdcfaf747d29",
+      "licence": "None declared",
+      "terms": "Corrected labels of the POPE questions, with ambiguous questions removed. Downloaded from the official repository and never redistributed.",
+      "files": [
+        {
+          "path": "repope/coco_repope_random.json",
+          "url": "https://raw.githubusercontent.com/YanNeu/RePOPE/bcf22e5690d587cce34e1728af3efdcfaf747d29/annotations/coco_repope_random.json",
+          "size": 340368,
+          "digest": "f464fcaf60b24ce2f280cf33f122e000dbdd35c8e88f77c4141c9c2cba864611"
+        },
+        {
+          "path": "repope/coco_repope_popular.json",
+          "url": "https://raw.githubusercontent.com/YanNeu/RePOPE/bcf22e5690d587cce34e1728af3efdcfaf747d29/annotations/coco_repope_popular.json",
+          "size": 333773,
+          "digest": "57832b055bae5fd6176278a4f104c98ddd84811f7d26dfcb93d481f6c9da09a5"
+        },
+        {
+          "path": "repope/coco_repope_adversarial.json",
+          "url": "https://raw.githubusercontent.com/YanNeu/RePOPE/bcf22e5690d587cce34e1728af3efdcfaf747d29/annotations/coco_repope_adversarial.json",
+          "size": 328764,
+          "digest": "8c346dbb060bf422ff92e769fa68e5ab3e8a777cb28a26e973387441e05c9ccf"
+        }
+      ],
+      "tasks": [
+        {
+          "key": "repope-random",
+          "kind": "yes_no",
+          "description": "The POPE random questions with corrected labels, which reuse the answers given to POPE.",
+          "loader": "pope",
+          "scorer": "pope",
+          "primary": "f1",
+          "max_new_tokens": 64,
+          "files": [
+            "repope/coco_repope_random.json"
+          ],
+          "requires": [
+            "coco-2014"
+          ]
+        },
+        {
+          "key": "repope-popular",
+          "kind": "yes_no",
+          "description": "The POPE popular questions with corrected labels, which reuse the answers given to POPE.",
+          "loader": "pope",
+          "scorer": "pope",
+          "primary": "f1",
+          "max_new_tokens": 64,
+          "files": [
+            "repope/coco_repope_popular.json"
+          ],
+          "requires": [
+            "coco-2014"
+          ]
+        },
+        {
+          "key": "repope-adversarial",
+          "kind": "yes_no",
+          "description": "The POPE adversarial questions with corrected labels, which reuse the answers given to POPE.",
+          "loader": "pope",
+          "scorer": "pope",
+          "primary": "f1",
+          "max_new_tokens": 64,
+          "files": [
+            "repope/coco_repope_adversarial.json"
+          ],
+          "requires": [
+            "coco-2014"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "chair",
+      "name": "CHAIR",
+      "reference": "Rohrbach et al., Object Hallucination in Image Captioning, EMNLP 2018",
+      "source": "https://github.com/shikiw/OPERA",
+      "revision": "e1bb7632508bdfaa5cdaf5b69b64419688107da8",
+      "licence": "MIT (OPERA repository, whose script and image list are used)",
+      "terms": "The metric predates vision language models and fixes no images, prompt or length. The 500 val2014 images are those of the greedy LLaVA-1.5 run published with OPERA, read from its log for their identifiers only.",
+      "files": [
+        {
+          "path": "chair/opera_llava15_greedy.jsonl",
+          "url": "https://raw.githubusercontent.com/shikiw/OPERA/e1bb7632508bdfaa5cdaf5b69b64419688107da8/log/chair_eval_results/llava-1.5/greedy.jsonl",
+          "size": 259599,
+          "digest": "3d70bbefa95f1894a09e97e83f2a40531be39b12db50f4e2386c5bfc99842fdd"
+        }
+      ],
+      "tasks": [
+        {
+          "key": "chair",
+          "kind": "caption",
+          "description": "Detailed descriptions of 500 COCO val2014 images, scored for objects that are mentioned but absent.",
+          "loader": "chair",
+          "scorer": "chair",
+          "primary": "chair_s",
+          "max_new_tokens": 512,
+          "options": {
+            "prompt": "Please describe this image in detail."
+          },
+          "files": [
+            "chair/opera_llava15_greedy.jsonl",
+            "coco/annotations_trainval2014.zip"
+          ],
+          "requires": [
+            "coco-2014"
+          ],
+          "higher_is_better": false
+        }
+      ]
+    },
+    {
+      "key": "mme",
+      "name": "MME",
+      "reference": "Fu et al., MME: A Comprehensive Evaluation Benchmark for Multimodal Large Language Models, arXiv 2306.13394",
+      "source": "https://github.com/BradyFU/Awesome-Multimodal-Large-Language-Models/tree/Evaluation",
+      "revision": "7056f44dac19de35e510b62d734bb2f7a6f64739",
+      "licence": "Apache 2.0 tag on the hosting repository. The images come from third parties.",
+      "terms": "The release archive is downloaded from the address the authors link and never redistributed.",
+      "files": [
+        {
+          "path": "mme/MME_Benchmark_release_version.zip",
+          "url": "https://huggingface.co/datasets/darkyarding/MME/resolve/7056f44dac19de35e510b62d734bb2f7a6f64739/MME_Benchmark_release_version.zip",
+          "size": 199848448,
+          "digest": "1c4b79b494eae354df8fc0728c64fe4b89e46b4c609d36003be15dace6d8e3d7"
+        }
+      ],
+      "tasks": [
+        {
+          "key": "mme",
+          "kind": "yes_no",
+          "description": "Two yes or no questions on each of 1187 images in 14 perception and cognition subtasks, used to measure general capability.",
+          "loader": "mme",
+          "scorer": "mme",
+          "primary": "total",
+          "max_new_tokens": 64,
+          "files": [
+            "mme/MME_Benchmark_release_version.zip"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "vti-data",
+      "name": "VTI demonstrations",
+      "reference": "Liu et al., Reducing Hallucinations in Large Vision-Language Models via Latent Space Steering, ICLR 2025",
+      "source": "https://github.com/shengliu66/VTI",
+      "revision": "bb5dfee33a9e555f22af9faa7b3495c0ac3df69e",
+      "licence": "None declared",
+      "terms": "Faithful and hallucinated descriptions of COCO train2014 images, on which VTI fits its directions. Downloaded from the official repository and never redistributed. No task reads them.",
+      "files": [
+        {
+          "path": "methods/vti/hallucination_vti_demos.jsonl",
+          "url": "https://raw.githubusercontent.com/shengliu66/VTI/bb5dfee33a9e555f22af9faa7b3495c0ac3df69e/experiments/data/hallucination_vti_demos.jsonl",
+          "size": 145506,
+          "digest": "5ce467817fc2a29735715fd6793b4927268cfff030e798f9f3a60a1fcb575d0d"
+        }
+      ]
+    },
+    {
+      "key": "revis-data",
+      "name": "REVIS pairs, calibration questions and vector",
+      "reference": "Wu et al., REVIS: Sparse Latent Steering to Mitigate Object Hallucination in Large Vision-Language Models, ICML 2026",
+      "source": "https://github.com/antgroup/Revis",
+      "revision": "75f4d29d402d4c1c4dbb2c69e88e3aa50cd0c9cc",
+      "licence": "Apache 2.0",
+      "terms": "Pairs of descriptions and object presence questions on COCO train2014 images, on which REVIS computes its vectors and calibrates its gate, and the vectors its authors release for LLaVA-1.5. Downloaded from the official repository. No task reads them.",
+      "files": [
+        {
+          "path": "methods/revis/OH_sampled_data_100.json",
+          "url": "https://raw.githubusercontent.com/antgroup/Revis/75f4d29d402d4c1c4dbb2c69e88e3aa50cd0c9cc/data/OH_sampled_data_100.json",
+          "size": 131358,
+          "digest": "b134685685a6ad29bfbf4769cac5e24337ef16126b22fb9ac34061be37b5762c"
+        },
+        {
+          "path": "methods/revis/coco_pope_calibration_merged.jsonl",
+          "url": "https://raw.githubusercontent.com/antgroup/Revis/75f4d29d402d4c1c4dbb2c69e88e3aa50cd0c9cc/data/coco_pope_calibration_merged.jsonl",
+          "size": 737993,
+          "digest": "2b3e8c4ffd554e3b5afd199568b0248dc51ffbb411873c8215b6f950f477fdfe"
+        },
+        {
+          "path": "methods/revis/llava15_none_image.pt",
+          "url": "https://raw.githubusercontent.com/antgroup/Revis/75f4d29d402d4c1c4dbb2c69e88e3aa50cd0c9cc/vector/llava15_none_image.pt",
+          "size": 1650809,
+          "digest": "c130a713856860fdb1f8f1819dff253f84445c4629172502670bd3395905fd4b"
+        }
+      ]
+    },
+    {
+      "key": "nullu-data",
+      "name": "Nullu pairs",
+      "reference": "Yang et al., Nullu: Mitigating Object Hallucinations in Large Vision-Language Models via HalluSpace Projection, CVPR 2025",
+      "source": "https://github.com/Ziwei-Zheng/Nullu",
+      "revision": "dcb1ef4ea44e659a769d72caa499ddde23eab877",
+      "licence": "MIT",
+      "terms": "Truthful and hallucinated descriptions of 5000 COCO train2014 images, from LURE, on which Nullu builds its subspaces. Downloaded from the official repository and never redistributed. No task reads them.",
+      "files": [
+        {
+          "path": "methods/nullu/hallucination5k_train.jsonl",
+          "url": "https://raw.githubusercontent.com/Ziwei-Zheng/Nullu/dcb1ef4ea44e659a769d72caa499ddde23eab877/data/LURE/hallucination5k_train.jsonl",
+          "size": 7147910,
+          "digest": "46fd3acf8c3f07bd84d1092e8cee1faf432888c510bd0b3f6209db206feb4df5"
+        }
+      ]
+    }
+  ]
+}
