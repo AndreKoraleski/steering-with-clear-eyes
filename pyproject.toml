@@ -1,0 +1,105 @@
+[project]
+name = "steering-with-clear-eyes"
+version = "0.1.0"
+description = "A benchmark of activation steering methods against object hallucination in vision language models."
+readme = "README.md"
+authors = [
+    { name = "Andre Vinicius Moura Koraleski", email = "andre.andre2@discente.ufg.br" },
+    { name = "Daniel Rios Borges", email = "daniel.rios@discente.ufg.br" },
+    { name = "Rian de Souza Santos", email = "rian.souza@discente.ufg.br" },
+    { name = "Henrick de Souza Silva", email = "henrick.henrick@discente.ufg.br" },
+]
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.13"
+dependencies = [
+    "nltk>=3.10.4",
+    "numpy>=2.5.4",
+    "pandas>=3.1.1",
+    "pillow>=13.0.0",
+    "pydantic>=2.14.3",
+    "scikit-learn>=1.9.1",
+    "scipy>=1.18.1",
+    "structlog>=26.1.0",
+    "torch>=2.14.1",
+    "tqdm>=4.70.1",
+    "transformers>=5.23.0",
+]
+
+[project.scripts]
+swce = "swce.cli:main"
+swce-data = "swce.data.__main__:main"
+swce-diagnose = "swce.diagnostics.__main__:main"
+swce-evaluate = "swce.evaluation.__main__:main"
+swce-registry = "swce.registry.__main__:main"
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu130", marker = "sys_platform == 'win32' or sys_platform == 'linux'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = [
+    "mypy>=2.4.1",
+    "pandas-stubs>=3.1.0.261029",
+    "pre-commit>=4.7.0",
+    "pytest>=9.2.0",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.17.4",
+    "scipy-stubs>=1.18.1.1",
+    "types-tqdm>=4.70.0.20261106",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/swce"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes
+    "I",        # isort
+    "N",        # pep8-naming
+    "UP",       # pyupgrade
+    "B",        # flake8-bugbear
+    "A",        # flake8-builtins
+    "C4",       # flake8-comprehensions
+    "SIM",      # flake8-simplify
+    "PTH",      # flake8-use-pathlib
+    "RUF",      # ruff-specific
+    "D",        # pydocstyle
+]
+ignore = ["D105", "D107"]  # magic methods and constructors are documented by their class
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.isort]
+known-first-party = ["swce"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D"]
+
+[tool.mypy]
+strict = true
+files = ["src", "tests", "methods"]
+mypy_path = ["src", "tests"]
+explicit_package_bases = true
+
+[[tool.mypy.overrides]]
+module = ["nltk.*", "sklearn.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["--strict-markers", "--strict-config", "-ra", "--import-mode=importlib"]
+pythonpath = ["tests"]

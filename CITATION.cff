@@ -1,0 +1,36 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "steering-with-clear-eyes"
+abstract: >-
+  A benchmark of activation steering methods against object presence
+  hallucination in vision language models, which evaluates every method on the
+  same items through the official scorer of each benchmark and reports the
+  hallucination removed next to the general capability lost.
+type: software
+authors:
+  - family-names: Koraleski
+    given-names: Andre Vinicius Moura
+    email: andre.andre2@discente.ufg.br
+    affiliation: &ufg "Instituto de Informática, Universidade Federal de Goiás"
+  - family-names: Borges
+    given-names: Daniel Rios
+    email: daniel.rios@discente.ufg.br
+    affiliation: *ufg
+  - family-names: Santos
+    given-names: Rian de Souza
+    email: rian.souza@discente.ufg.br
+    affiliation: *ufg
+  - family-names: Silva
+    given-names: Henrick de Souza
+    email: henrick.henrick@discente.ufg.br
+    affiliation: *ufg
+repository-code: "https://github.com/AndreKoraleski/steering-with-clear-eyes"
+license: MIT
+version: 0.1.0
+date-released: "2026-11-17"
+keywords:
+  - benchmark
+  - activation steering
+  - hallucination
+  - vision language models
+  - interpretability
