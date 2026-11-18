@@ -171,7 +171,12 @@ ports.
 
 ## What has been run
 
-Nothing on this page has been run on real weights yet.
+The main experiment has run once, on `llava-onevision-1.5-8b`, at the `code-default` settings of
+VTI and REVIS with their controls and next to the unmodified model. Its tables are in
+`results/main`. It ran on one RTX 4090 with PyTorch 2.14.1 built for CUDA 12.6, since the driver
+of that machine, version 550, cannot run the build for CUDA 13.0 that the lock file pins. The rest
+of the environment is the locked one, and the `setting.json` of every condition records it.
+Nothing else on this page has been run on real weights yet.
 
 The interventions, the fitting of the VTI directions, the principal direction of REVIS, its
 selection of a layer and the states VISTA reads are tested against the official code.
@@ -185,5 +190,5 @@ model of its architecture, on POPE, RePOPE, CHAIR and MME, at the defaults of th
   false positives from correct answers, as expected of random weights, so REVIS was reported as
   inapplicable and left out.
 - The fitting of Nullu was not rehearsed, since it reads 5000 images.
-- Qwen3-VL was exercised as a small random model without its processor, and LLaVA-OneVision-1.5
-  was not exercised at all, since its model code cannot be built without downloading it.
+- Qwen3-VL was exercised as a small random model without its processor. LLaVA-OneVision-1.5
+  was not rehearsed, since its model code cannot be built without downloading it.
