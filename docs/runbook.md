@@ -106,7 +106,8 @@ change to `results/analysis.csv`, the comparison with the shortcuts of the unmod
 `results/shortcuts.csv` and the summary of the logit lens to `results/lens.csv`.
 
 Scoring CHAIR needs the COCO annotations, which are fetched into the data root, and the NLTK
-resources `punkt_tab`, `averaged_perceptron_tagger_eng` and `wordnet`.
+resources `punkt_tab`, `averaged_perceptron_tagger_eng` and `wordnet`, which are downloaded on
+first use when missing.
 
 ## 4. Residual shift
 

@@ -71,6 +71,13 @@ VEHICLE_WORDS = ("jet", "train")
 ANNOTATION_MEMBERS = ("annotations/instances_val2014.json", "annotations/captions_val2014.json")
 """Members of the COCO annotation archive holding the validation instances and captions."""
 
+NLTK_RESOURCES = {
+    "punkt_tab": "tokenizers/punkt_tab",
+    "averaged_perceptron_tagger_eng": "taggers/averaged_perceptron_tagger_eng",
+    "wordnet": "corpora/wordnet.zip",
+}
+"""NLTK resources the script needs, with the path under which NLTK finds each."""
+
 Lemmatizer = Callable[[str], list[str]]
 """Function turning a caption into its lemmas, in order."""
 
@@ -118,26 +125,36 @@ def vocabulary(path: Path = SYNONYMS_PATH) -> Vocabulary:
     return Vocabulary(nodes=nodes, double_words=double_words)
 
 
+@cache
+def nltk_resources() -> None:
+    """Download the NLTK resources of `NLTK_RESOURCES` that are not installed, once a process."""
+    import nltk
+
+    for name, path in NLTK_RESOURCES.items():
+        try:
+            nltk.data.find(path)
+        except LookupError:
+            nltk.download(name, quiet=True)
+
+
 def nltk_lemmas(caption: str) -> list[str]:
     """Lemmas of a caption as the script computes them with NLTK.
 
     The caption is lowered, tokenized and tagged, and every token is lemmatized with the WordNet
-    part of speech of its tag, noun when the tag maps to none.
+    part of speech of its tag, noun when the tag maps to none. Missing NLTK resources are
+    downloaded first.
 
     Args:
         caption: Caption to process.
 
     Returns:
         The lemmas, one per token.
-
-    Raises:
-        LookupError: If the NLTK resources `punkt_tab`, `averaged_perceptron_tagger_eng` and
-            `wordnet` are not installed.
     """
     import nltk
     from nltk.corpus import wordnet
     from nltk.stem import WordNetLemmatizer
 
+    nltk_resources()
     parts = {"J": wordnet.ADJ, "V": wordnet.VERB, "N": wordnet.NOUN, "R": wordnet.ADV}
     lemmatizer = WordNetLemmatizer()
     tagged = nltk.pos_tag(nltk.word_tokenize(caption.lower()))
