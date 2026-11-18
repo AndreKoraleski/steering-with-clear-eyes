@@ -130,7 +130,9 @@ uv run swce-diagnose --summarize-only
 Optional as well. It reads the residual stream of every POPE question under every method, once,
 and fits a probe of the expected answer on every block, with five folds over images. On the
 whole task it reads 3000 questions per method setting, about a forward pass each, and holds
-their states in memory, about 0.8 GB per setting for LLaVA-1.5.
+their states in memory, about 1.6 GB per setting for LLaVA-1.5. The probes of every block are
+fitted together on the GPU, which takes minutes, and on the processor when there is no GPU,
+which takes hours.
 
 ```bash
 uv run swce-diagnose --probe --subject swce.models:llava_15 methods/vti.py:build methods/vti.py:control methods/revis.py:build methods/revis.py:control --task pope-adversarial --limit 0
