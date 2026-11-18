@@ -2,10 +2,12 @@
 
 A pinned file is accepted only when its size and digest equal those of the registry. A download
 is written next to its target and renamed once verified, so an interrupted download never leaves
-a file that looks complete.
+a file that looks complete. Every process writes its own partial file, so jobs sharing a data root
+can download the same file at once.
 """
 
 import hashlib
+import os
 import shutil
 import time
 import urllib.request
@@ -66,6 +68,11 @@ def matches(path: Path, file: PinnedFile) -> bool:
     )
 
 
+def _partial(target: Path) -> Path:
+    """File a download of this process is written to before it is renamed to its target."""
+    return target.with_name(f"{target.name}.{os.getpid()}.part")
+
+
 def _download(url: str, target: Path) -> None:
     """Write the content of an address to a file, trying again after a failure of the network.
 
@@ -107,7 +114,7 @@ def fetch(file: PinnedFile, root: Path | None = None) -> Path:
         if not matches(target, file):
             raise PinError(f"{target} differs from its pin, delete it to download it again")
         return target
-    partial = target.with_name(target.name + ".part")
+    partial = _partial(target)
     log.info("downloading", path=file.path, bytes=file.size)
     _download(file.url, partial)
     if not matches(partial, file):
@@ -138,7 +145,7 @@ def fetch_image(card: BenchmarkCard, name: str, root: Path | None = None) -> Pat
         raise ValueError(f"benchmark {card.key} serves no single images")
     target = (root or default_data_root()) / card.image_dir / name
     if not target.exists():
-        partial = target.with_name(target.name + ".part")
+        partial = _partial(target)
         _download(card.image_url.format(name=name), partial)
         partial.replace(target)
     return target
