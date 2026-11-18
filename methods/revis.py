@@ -15,9 +15,10 @@ The method has three steps, each available here for any model.
    hallucinated descriptions the authors distribute. For LLaVA-1.5 the vectors the authors
    release are downloaded instead, pinned by their digest.
 2. `calibrate` selects the layer and the gate threshold on the calibration questions the authors
-   distribute, as `layer_select.py` does. The paper names layer 31 in Appendix C.3 and reports its
-   main numbers at layer 30 in Table 11 for LLaVA-1.5 and gives no threshold for it, so the
-   calibration is the only source of both.
+   distribute, as `layer_select.py` does, and records the threshold of every block it observes.
+   The paper names layer 31 in Appendix C.3 and reports its main numbers at layer 30 in Table 11
+   for LLaVA-1.5 and gives no threshold for either, so both layers are evaluated, each with the
+   threshold the calibration gives for it.
 3. The hook adds the vector wherever the risk, the negated cosine similarity between the residual
    stream and the vector, exceeds the threshold. The vector keeps its norm.
 
@@ -137,6 +138,22 @@ def calibration_path(subject: str) -> Path:
     return artifacts_root() / f"revis_{subject}.json"
 
 
+def threshold(calibrated: Mapping[str, Any], layer: int) -> float | None:
+    """Threshold a calibration outcome gives for one block.
+
+    Args:
+        calibrated: Outcome written by `calibrate`.
+        layer: Index of the decoder block.
+
+    Returns:
+        The threshold of the block, or None when the outcome holds none for it.
+    """
+    found = calibrated.get("taus", {}).get(str(layer))
+    if found is None and int(calibrated["layer"]) == layer:
+        found = calibrated["tau"]
+    return None if found is None else float(found)
+
+
 def load_vectors(subject: str, path: Path | None = None) -> dict[int, dict[str, Tensor]]:
     """Vectors of a subject by hidden state index, one above the block index.
 
@@ -195,9 +212,15 @@ class Revis(Steerer):
         released = self.vectors is not None or subject.name in RELEASED
         if not released and not vectors_path(subject.name).exists():
             compute_vectors(subject)
-        calibrated = self.layer is not None and self.tau is not None
-        if not calibrated and not calibration_path(subject.name).exists():
+        if self.layer is not None and self.tau is not None:
+            return
+        path = calibration_path(subject.name)
+        if not path.exists():
             calibrate(subject, vectors=self.vectors)
+        elif self.layer is not None:
+            calibrated = json.loads(path.read_text(encoding="utf-8"))
+            if threshold(calibrated, self.layer) is None:
+                calibrate(subject, vectors=self.vectors)
 
     def attach(self, subject: Subject) -> AbstractContextManager[None]:
         """Add the gated vector to the output of one decoder block.
@@ -223,7 +246,12 @@ class Revis(Steerer):
                 raise FileNotFoundError(f"calibrate {self.name} for {subject.name} first")
             calibrated = json.loads(path.read_text(encoding="utf-8"))
             layer = int(calibrated["layer"]) if layer is None else layer
-            tau = float(calibrated["tau"]) if tau is None else tau
+            tau = threshold(calibrated, layer) if tau is None else tau
+            if tau is None:
+                raise FileNotFoundError(
+                    f"calibrate {self.name} for {subject.name} again, "
+                    f"its outcome holds no threshold for block {layer}"
+                )
         vector = load_vectors(subject.name, self.vectors)[layer + 1]["visual"]
         edit = gate(vector, self.strength, tau, self.gamma)
         return edit_layers(subject.decoder_layers(), {layer: edit})
@@ -448,13 +476,40 @@ def select(
     for layer in sorted(risks, reverse=True):
         if layer < min_layer:
             break
-        factual = [r for r, c in zip(risks[layer], categories, strict=True) if c in ("TP", "TN")]
-        hallucinated = [r for r, c in zip(risks[layer], categories, strict=True) if c == "FP"]
+        factual, hallucinated = _split(risks[layer], categories)
         if not factual or not hallucinated:
             continue
         if np.mean(hallucinated) - np.mean(factual) > 0:
             return layer, float(np.percentile(factual, percentile))
     return None
+
+
+def thresholds(
+    risks: Mapping[int, Sequence[float]], categories: Sequence[str], *, percentile: float
+) -> dict[int, float]:
+    """Threshold of every observed block, as the official calibration computes it for each.
+
+    Args:
+        risks: Risk of every answered question at the last prompt position, by block index.
+        categories: Outcome of every question, `TP`, `FP`, `TN` or `Other`.
+        percentile: Percentile of the risks of correct answers taken as the threshold.
+
+    Returns:
+        The threshold of every block with both correct answers and false positives.
+    """
+    found = {}
+    for layer, observed in risks.items():
+        factual, hallucinated = _split(observed, categories)
+        if factual and hallucinated:
+            found[layer] = float(np.percentile(factual, percentile))
+    return found
+
+
+def _split(risks: Sequence[float], categories: Sequence[str]) -> tuple[list[float], list[float]]:
+    """Risks of the correct answers and of the false positives."""
+    factual = [r for r, c in zip(risks, categories, strict=True) if c in ("TP", "TN")]
+    hallucinated = [r for r, c in zip(risks, categories, strict=True) if c == "FP"]
+    return factual, hallucinated
 
 
 def calibrate(
@@ -529,22 +584,32 @@ def calibrate(
         )
     output = output or calibration_path(subject.name)
     output.parent.mkdir(parents=True, exist_ok=True)
-    outcome = {"layer": selected[0], "tau": selected[1], "percentile": percentile}
+    every = thresholds(risks, categories, percentile=percentile)
+    outcome = {
+        "layer": selected[0],
+        "tau": selected[1],
+        "percentile": percentile,
+        "taus": {str(layer): every[layer] for layer in sorted(every)},
+    }
     output.write_text(json.dumps(outcome, indent=2) + "\n", encoding="utf-8", newline="\n")
     return selected
 
 
 def build() -> list[Steerer]:
-    """Setting the paper publishes for LLaVA-1.5, and the defaults of the code for other models.
+    """Settings the paper publishes for LLaVA-1.5, and the defaults of the code for other models.
 
-    Both leave the layer and the threshold to the calibration, as the recipe does.
+    The paper names block 31 for LLaVA-1.5 in its Appendix C.3, which the calibration also
+    selects, and reports its main numbers at block 30 in its Table 11. Both are evaluated. The
+    threshold always comes from the calibration, which gives one for every block it observes.
 
     Returns:
-        The published strength of 1.1, and the default strength of 2.5 of the official script,
-        used on models without a published setting.
+        The published strength of 1.1 at the block the calibration selects, the same strength
+        at block 30, named after Table 11, and the default strength of 2.5 of the official
+        script at the calibrated block, used on models without a published setting.
     """
     return [
         Revis(strength=1.1, published_for=("llava-1.5-7b",)),
+        Revis(setting="table-11", strength=1.1, layer=30, published_for=("llava-1.5-7b",)),
         Revis(setting="code-default", strength=2.5, fallback=True),
     ]
 

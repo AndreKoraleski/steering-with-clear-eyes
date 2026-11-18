@@ -95,15 +95,20 @@ Official code at commit `75f4d29`. Two steps, `compute_vectors` and `calibrate`.
 
 | | `llava-1.5-7b` | `qwen3-vl-8b` | `llava-onevision-1.5-8b` |
 |---|---|---|---|
-| Setting | Published. Strength 1.1 | `code-default`. Strength 2.5 | `code-default`. Strength 2.5 |
+| Setting | Published. Strength 1.1 at the calibrated block, and at block 30 as `table-11` | `code-default`. Strength 2.5 | `code-default`. Strength 2.5 |
 | Vectors | Released by the authors, downloaded | Computed on the 100 official pairs | Computed on the 100 official pairs |
 | Prompts of the vectors | Not needed | The construction the official code holds for Qwen3 | The construction the official code uses for any other model |
-| Layer and threshold | Calibrated | Calibrated | Calibrated |
+| Layer and threshold | Calibrated, or block 30 with its calibrated threshold | Calibrated | Calibrated |
 
 - The paper names layer 31 in its Appendix C.3 and reports its main numbers at layer 30 in its
-  Table 11 for LLaVA-1.5, and gives no threshold for it. Both therefore come from the calibration
-  on every model, with the defaults of `layer_select.sh`, the 85th percentile over 300 questions
-  down to layer 10. The paper states 0.8 for the percentile and 100 images.
+  Table 11 for LLaVA-1.5, and gives no threshold for either. When a paper publishes two values
+  for one model, both are evaluated as settings of their own. The default setting takes its
+  layer from the calibration, which selects block 31, and `table-11` is fixed at block 30.
+- The threshold comes from the calibration on every model, with the defaults of
+  `layer_select.sh`, the 85th percentile over 300 questions down to layer 10. The paper states
+  0.8 for the percentile and 100 images. The calibration records the threshold of every block it
+  observes, as the official script computes it for each, so a setting fixed at a block reads the
+  threshold of that block.
 - The official script answers the calibration questions once per layer. They are answered once
   here and every layer is observed in the same pass, which gives the same risks.
 - The calibration answers greedily in at most five tokens, as the official script does, whatever
