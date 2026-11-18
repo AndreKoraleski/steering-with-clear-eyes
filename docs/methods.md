@@ -157,8 +157,9 @@ images. Its scores are in `results/leaderboard.csv`.
 
 - Environment: one NVIDIA A100-SXM4-80GB, Python 3.13.16, PyTorch 2.14.1+cu130, transformers
   5.23.0, half precision, seed zero, the three jobs side by side on one card.
-- The unmodified model lands where other papers put it, with an F1 of 0.802 on POPE adversarial
-  and a CHAIR_S of 50.2.
+- The unmodified model lands where other papers put it on CHAIR and MME, with a CHAIR_S of 50.2
+  and an MME of 1769. On POPE adversarial it reaches an F1 of 0.802 but answers yes to 61.7% of
+  the questions, more than in other papers, as the comparison below shows.
 - REVIS answers POPE and RePOPE exactly as the unmodified model does, raises CHAIR_S to 60.2 and
   lowers MME by 302, with longer answers on MME. Its random control answers every task exactly as
   the unmodified model does, since its gate never opens at the calibrated threshold. The causes
@@ -176,7 +177,9 @@ official one. The behaviour comes from what the recipe selects and from the prot
 
 - **The calibration selects the last block.** It searches downward from the top and stops at the
   first block that separates false positives from correct answers. Block 31 already does, with a
-  threshold of 0.195. The paper names the same block in its Appendix C.3. Nothing comes after the
+  threshold of 0.195. The paper names the same block in its Appendix C.3, although its own Table
+  11 reports that block as failing, with a CHAIR_S of 51.0, a CHAIR_I of 47.84 and an MM-Vet of
+  12.29 against 35.92 unsteered. Nothing comes after the
   last block but the final normalization and the output head. Adding the vector there changes only
   the next token at the positions where the gate opens. It reaches no later position, so it acts
   as a bias on the logits.
@@ -215,9 +218,53 @@ official one. The behaviour comes from what the recipe selects and from the prot
   token limit in a loop of repeated words.
 - **The control breaks the text, which flatters its CHAIR.** The random vector of the norm of the
   visual vector reaches a CHAIR_S of 25.4, below the method, but 181 of its 500 descriptions run to
-  the token limit and end in a loop of repeated characters or words. A description that names no object hallucinates
-  none, so its CHAIR is not comparable with that of the method. On POPE it flips 141 answers and
-  on MME it scores as the unmodified model does.
+  the token limit and end in a loop of repeated characters or words. A description that names no
+  object hallucinates none, so its CHAIR is not comparable with that of the method. On POPE it
+  flips 141 answers and on MME it scores as the unmodified model does.
+
+### Comparison with published results
+
+The protocols differ from paper to paper, so the comparison is of direction and size, not of the
+last digit. The REVIS paper evaluates CHAIR on 100 images, against 500 here.
+
+| | Here | VTI paper | REVIS paper | Others |
+|---|---|---|---|---|
+| Unmodified CHAIR_S and CHAIR_I | 50.2 and 14.1 | 51.0 and 15.2 | 54.0 and 15.78 | 50.0 and 15.4 (V-ITI), 48.6 and 13.6 (RUDDER) |
+| Unmodified MME | 1769 | Not reported | 1754 | 1865 (V-ITI), 1746 (RUDDER) |
+| Unmodified POPE adversarial, accuracy and F1 | 77.9 and 80.2 | 76.03 and 76.45 | 83.20 and 82.32 | 76.03 and 76.26 (V-ITI) |
+| VTI CHAIR_S and CHAIR_I | 36.6 and 11.1 | 35.8 and 11.1 | 35.0 and 15.58 | |
+| VTI POPE adversarial F1 | 80.7, +0.5 | 82.11, +5.7 | 80.91, -1.4 | |
+| VTI MME | 1553 at the POPE setting, -133 | Not reported | 1507, -247 | |
+| REVIS block 31 CHAIR_S | 60.2 | | 51.0 | |
+| REVIS block 30 CHAIR_S | 32.0 | | 30.0 | |
+| REVIS block 30 MME | 1812, +43 | | 1787, +33 | |
+| REVIS block 30 POPE adversarial F1 | 78.7, -1.5 | | 83.51, +1.2 | |
+
+The V-ITI paper is arXiv 2512.03542 and the RUDDER paper arXiv 2511.10292. Neither evaluates VTI
+or REVIS.
+
+- **CHAIR and MME agree.** The unmodified model, VTI on CHAIR, both blocks of REVIS on CHAIR and
+  the change REVIS makes to MME at block 30 all land within the spread of the published values.
+- **The unmodified model answers yes more often on POPE.** Here it says yes to 61.7% of the
+  adversarial questions, with a recall of 89.6 and a precision of 72.7, where the REVIS paper
+  reports a recall of 78.2 for the same model and split. The REVIS and V-ITI papers append
+  "Please answer yes or no." to every question, and the questions are asked unchanged here, which
+  is a likely cause. The VTI paper also asks them unchanged, so the cause is not established.
+- **This bias decides the sign of a POPE change.** REVIS at block 30 pushes answers to yes in both
+  evaluations, raising the yes ratio here from 0.617 to 0.689. A model that says no too often
+  gains from that, as in the REVIS paper, and one that says yes too often loses, as here. The
+  comparison with the shortcuts of the unmodified model finds no gain beyond the shift of the
+  threshold, so the gain the paper reports is likely a shift of the threshold as well. A POPE
+  result is only comparable across protocols through its threshold-free metrics, the AUROC and
+  d', which `results/leaderboard.csv` reports.
+- **VTI on POPE matches the independent evaluation and not its own paper.** The VTI paper
+  reports a gain of 5.7 F1 points against a baseline its paper decodes with beam search. The REVIS
+  paper finds a loss of 1.4, and here the gain of 0.5 is that of the random control.
+- **VTI shortens descriptions more here than in its paper.** Its paper reports the recall rising
+  from 75.2 to 76.8 with descriptions 8% shorter. Here the recall falls from 80.8 to 75.9 and the
+  descriptions shorten by 22%, which is why most of the gain on CHAIR is matched by truncating
+  the unmodified descriptions. The cause of the difference is not known, and the finding holds
+  for this protocol.
 
 The interventions, the fitting of the VTI directions, the principal direction of REVIS, its
 selection of a layer and the states VISTA reads are tested against the official code.
