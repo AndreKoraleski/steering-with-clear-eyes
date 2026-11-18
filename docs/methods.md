@@ -146,7 +146,18 @@ ports.
 
 ## What has been run
 
-Nothing on this page has been run on real weights yet.
+The main experiment ran on `llava-1.5-7b` with VTI, REVIS and their controls, on POPE
+adversarial, RePOPE, CHAIR and MME, whole, with the logit lens and the residual shift on fifty
+images. Its scores are in `results/leaderboard.csv`.
+
+- Environment: one NVIDIA A100-SXM4-80GB, Python 3.13.16, PyTorch 2.14.1+cu130, transformers
+  5.23.0, half precision, seed zero, the three jobs side by side on one card.
+- The unmodified model lands where other papers put it, with an F1 of 0.802 on POPE adversarial
+  and a CHAIR_S of 50.2.
+- REVIS answers POPE and RePOPE exactly as the unmodified model does, raises CHAIR_S to 60.2 and
+  lowers MME by 302, with longer answers on MME. Its random control answers every task exactly as
+  the unmodified model does, since its gate never opens at the calibrated threshold.
+- Qwen3-VL and LLaVA-OneVision-1.5 have not been run.
 
 The interventions, the fitting of the VTI directions, the principal direction of REVIS, its
 selection of a layer and the states VISTA reads are tested against the official code.

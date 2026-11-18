@@ -254,10 +254,10 @@ the proof of concept.
   and a small random model of its architecture, `swce.models:llava_15_rehearsal`. It exercises
   the prompts, the tokens, the hooks, the recipes and the scoring, and says nothing about
   results.
-- The models and methods have not been run on real weights yet. The interventions are tested on
-  small models of the LLaVA and Qwen3-VL architectures with random weights, and LLaVA-OneVision-1.5
-  cannot be built without downloading its code. [docs/methods.md](docs/methods.md) lists what the
-  rehearsal covered.
+- Only LLaVA-1.5-7B has been run on real weights, with VTI, REVIS and their controls. Qwen3-VL
+  and LLaVA-OneVision-1.5 are tested only as small models with random weights, and the latter
+  cannot be built without downloading its code. [docs/methods.md](docs/methods.md) lists what has
+  run.
 - Equivalence with the official code covers the interventions, the fitting of the VTI directions
   and the principal direction and layer selection of REVIS. It does not cover the prompts the
   fitting steps build, nor a whole evaluation, which also depends on the prompt template and on
