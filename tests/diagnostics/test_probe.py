@@ -3,10 +3,15 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
+import torch
+from sklearn.linear_model import LogisticRegression
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
 from support import ToySubject, tiny_registry
 
 from swce.baselines import RandomDirection
 from swce.diagnostics import probe, probe_task, write_probes
+from swce.diagnostics.probe import Probes
 
 
 def states_with_signal(
@@ -20,6 +25,21 @@ def states_with_signal(
     noise[:, 1, 0] += np.where(positive, 2.0, -2.0)
     names = np.repeat([f"image{index}" for index in range(groups)], per_group)
     return noise, positive, names
+
+
+def test_probes_solve_the_logistic_regression_of_scikit_learn() -> None:
+    generator = np.random.default_rng(2)
+    count, layers, width = 120, 3, 6
+    positive = generator.random(count) < 0.5
+    states = generator.normal(size=(count, layers, width)) * np.array([1.0, 3.0, 0.5])[:, None]
+    states[:, :, 0] += np.where(positive, 1.0, -1.0)[:, None] * np.array([0.2, 1.0, 2.0])
+    fitted = Probes(torch.from_numpy(states), torch.from_numpy(positive))
+    ours = fitted.decision(torch.from_numpy(states)).numpy()
+    for layer in range(layers):
+        reference = make_pipeline(StandardScaler(), LogisticRegression(tol=1e-10, max_iter=10000))
+        reference.fit(states[:, layer], positive)
+        expected = reference.decision_function(states[:, layer])
+        assert ours[:, layer] == pytest.approx(expected, abs=1e-4)
 
 
 def test_probe_reads_the_block_that_holds_the_answer() -> None:

@@ -16,6 +16,8 @@ fitting and in evaluation. Under a steering method, three readings are reported 
   along the direction that separates the answers, toward yes or toward no.
 
 The regularization is the default of scikit-learn, on standardized states, and is not tuned.
+The probes of every block are fitted together with PyTorch, on the GPU when there is one, and
+`tests/diagnostics/test_probe.py` checks them against scikit-learn.
 """
 
 import fnmatch
@@ -24,11 +26,11 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import torch
+import torch.nn.functional as F  # noqa: N812
 from numpy.typing import NDArray
-from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import GroupKFold
-from sklearn.pipeline import Pipeline, make_pipeline
-from sklearn.preprocessing import StandardScaler
+from torch import Tensor
 from tqdm import tqdm
 
 from swce.baselines.reference import Unmodified
@@ -96,9 +98,161 @@ def collect(
     return stacked, np.array(positive, dtype=bool), np.array(groups)
 
 
-def classifier() -> Pipeline:
-    """Standardized logistic regression at the defaults of scikit-learn."""
-    return make_pipeline(StandardScaler(), LogisticRegression(max_iter=ITERATIONS))
+def default_device() -> torch.device:
+    """The first GPU when there is one, else the processor."""
+    return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+class Probes:
+    """Standardized logistic regressions of every block, fitted together.
+
+    The objective is that of `LogisticRegression` of scikit-learn at its default `C` of one, an
+    L2 penalty of one half the squared norm of the weights and the summed log loss, with an
+    unpenalized intercept, on states standardized as `StandardScaler` does. The blocks do not
+    interact, so their sum is minimized at once by L-BFGS, which is what makes it fast on a GPU.
+
+    Attributes:
+        mean: Mean of the fitted states, of shape `(layers, width)`.
+        scale: Standard deviation of the fitted states, one where it is zero.
+        weight: Weights of every block, of shape `(layers, width)`.
+        bias: Intercept of every block, of shape `(layers,)`.
+    """
+
+    def __init__(self, states: Tensor, positive: Tensor, *, iterations: int = ITERATIONS) -> None:
+        """Fit the probes.
+
+        Args:
+            states: States of shape `(items, layers, width)`, in double precision.
+            positive: Whether each item expects yes, of shape `(items,)`.
+            iterations: Iterations the solver may take before it stops.
+        """
+        self.mean = states.mean(dim=0)
+        scale = states.std(dim=0, unbiased=False)
+        self.scale = torch.where(scale > 0, scale, torch.ones_like(scale))
+        standard = (states - self.mean) / self.scale
+        sign = positive.to(states.dtype) * 2 - 1
+        layers, width = states.shape[1:]
+        self.weight = torch.zeros(layers, width, dtype=states.dtype, device=states.device)
+        self.bias = torch.zeros(layers, dtype=states.dtype, device=states.device)
+        self.weight.requires_grad_(True)
+        self.bias.requires_grad_(True)
+        solver = torch.optim.LBFGS(
+            [self.weight, self.bias],
+            max_iter=iterations,
+            history_size=20,
+            tolerance_grad=1e-9,
+            tolerance_change=1e-12,
+            line_search_fn="strong_wolfe",
+        )
+        count = states.shape[0]
+
+        def objective() -> Tensor:
+            solver.zero_grad()
+            logits = torch.einsum("nld,ld->nl", standard, self.weight) + self.bias
+            # Divided by the number of items, which leaves the minimum where it is.
+            loss = (F.softplus(-sign[:, None] * logits).sum() + 0.5 * (self.weight**2).sum()) / (
+                count
+            )
+            loss.backward()  # type: ignore[no-untyped-call]
+            return loss
+
+        solver.step(objective)  # type: ignore[no-untyped-call]
+        self.weight = self.weight.detach()
+        self.bias = self.bias.detach()
+
+    def decision(self, states: Tensor) -> Tensor:
+        """Score of yes of every item at every block, of shape `(items, layers)`."""
+        standard = (states - self.mean) / self.scale
+        return torch.einsum("nld,ld->nl", standard, self.weight) + self.bias
+
+
+def scores(
+    fitted_on: NDArray[np.float32],
+    applied_to: Sequence[NDArray[np.float32]],
+    positive: NDArray[np.bool_],
+    splits: Sequence[tuple[NDArray[np.intp], NDArray[np.intp]]],
+    device: torch.device,
+) -> list[NDArray[np.float64]]:
+    """Out-of-fold scores of probes fitted on one set of states and applied to others.
+
+    Args:
+        fitted_on: States the probes are fitted on, of shape `(items, layers, width)`.
+        applied_to: States of the same items the probes of each fold score on its held-out items.
+        positive: Whether each item expects yes.
+        splits: Indices of the fitted and the held-out items of every fold.
+        device: Device the probes are fitted on.
+
+    Returns:
+        For every array of `applied_to`, the score of every item at every block, of shape
+        `(items, layers)`.
+    """
+
+    def tensor(array: NDArray[np.float32]) -> Tensor:
+        return torch.from_numpy(np.ascontiguousarray(array)).to(device, torch.float64)
+
+    found = [np.zeros(fitted_on.shape[:2]) for _ in applied_to]
+    for train, test in splits:
+        target = torch.from_numpy(positive[train]).to(device)
+        fitted = Probes(tensor(fitted_on[train]), target)
+        for result, states in zip(found, applied_to, strict=True):
+            result[test] = fitted.decision(tensor(states[test])).cpu().numpy()
+    return found
+
+
+def probe_settings(
+    unmodified: NDArray[np.float32],
+    steered: Sequence[NDArray[np.float32]],
+    positive: NDArray[np.bool_],
+    groups: NDArray[np.str_],
+    *,
+    folds: int = FOLDS,
+    device: torch.device | None = None,
+) -> list[pd.DataFrame]:
+    """Cross-validated probes of the unmodified model and of every steered setting.
+
+    The probes of the unmodified model are fitted once per fold and applied to every setting.
+
+    Args:
+        unmodified: States of the unmodified model, of shape `(items, layers, width)`.
+        steered: States of the same items under every method, of the same shape.
+        positive: Whether each item expects yes.
+        groups: Image of each item. The items of one image always fall in the same fold.
+        folds: Number of folds.
+        device: Device the probes are fitted on, or None for the first GPU when there is one.
+
+    Returns:
+        The readings of `probe` for the unmodified model, then for every steered setting.
+    """
+    device = device or default_device()
+    splits = list(GroupKFold(n_splits=folds).split(unmodified[:, 0], positive, groups))
+    base, *transfers = scores(unmodified, [unmodified, *steered], positive, splits, device)
+    frames = [readings(base, base, base, positive)]
+    for states, transfer in zip(steered, transfers, strict=True):
+        (own,) = scores(states, [states], positive, splits, device)
+        frames.append(readings(own, transfer, base, positive))
+    return frames
+
+
+def readings(
+    own: NDArray[np.float64],
+    transfer: NDArray[np.float64],
+    base: NDArray[np.float64],
+    positive: NDArray[np.bool_],
+) -> pd.DataFrame:
+    """Readings of one setting from its out-of-fold scores, block by block."""
+    rows = []
+    for layer in range(own.shape[1]):
+        spread = float(base[:, layer].std())
+        shift = (transfer[:, layer] - base[:, layer]).mean()
+        rows.append(
+            {
+                "layer": layer,
+                "auroc": auroc(own[:, layer], positive),
+                "transfer_auroc": auroc(transfer[:, layer], positive),
+                "score_shift": float(shift / spread) if spread else 0.0,
+            }
+        )
+    return pd.DataFrame(rows)
 
 
 def probe(
@@ -108,6 +262,7 @@ def probe(
     groups: NDArray[np.str_],
     *,
     folds: int = FOLDS,
+    device: torch.device | None = None,
 ) -> pd.DataFrame:
     """Cross-validated probes of one setting against those of the unmodified model.
 
@@ -118,6 +273,7 @@ def probe(
         positive: Whether each item expects yes.
         groups: Image of each item. The items of one image always fall in the same fold.
         folds: Number of folds.
+        device: Device the probes are fitted on, or None for the first GPU when there is one.
 
     Returns:
         One row per block with its index `layer`, `auroc`, the area under the ROC curve of the
@@ -126,32 +282,9 @@ def probe(
         probe from the unmodified states to the steered ones, in standard deviations of its
         score on the unmodified states. A positive shift moves the stream toward yes.
     """
-    splits = list(GroupKFold(n_splits=folds).split(unmodified[:, 0], positive, groups))
-    rows = []
-    same = steered is unmodified
-    for layer in range(unmodified.shape[1]):
-        own = np.zeros(len(positive))
-        transfer = np.zeros(len(positive))
-        base = np.zeros(len(positive))
-        for train, test in splits:
-            fitted = classifier().fit(unmodified[train, layer], positive[train])
-            base[test] = fitted.decision_function(unmodified[test, layer])
-            transfer[test] = fitted.decision_function(steered[test, layer])
-            if same:
-                own[test] = base[test]
-            else:
-                refit = classifier().fit(steered[train, layer], positive[train])
-                own[test] = refit.decision_function(steered[test, layer])
-        spread = float(base.std())
-        rows.append(
-            {
-                "layer": layer,
-                "auroc": auroc(own.astype(np.float64), positive),
-                "transfer_auroc": auroc(transfer.astype(np.float64), positive),
-                "score_shift": float((transfer - base).mean() / spread) if spread else 0.0,
-            }
-        )
-    return pd.DataFrame(rows)
+    others = [] if steered is unmodified else [steered]
+    frames = probe_settings(unmodified, others, positive, groups, folds=folds, device=device)
+    return frames[-1]
 
 
 def probe_task(
@@ -183,9 +316,11 @@ def probe_task(
         subject, steerers, task, limit=limit, data=data, registry=registry
     )
     unmodified = states[0][1]
+    found = probe_settings(
+        unmodified, [steered for _, steered in states[1:]], positive, groups, folds=folds
+    )
     frames = []
-    for setting, steered in states:
-        frame = probe(unmodified, steered, positive, groups, folds=folds)
+    for (setting, _), frame in zip(states, found, strict=True):
         frames.append(
             frame.assign(
                 model=subject.name,
