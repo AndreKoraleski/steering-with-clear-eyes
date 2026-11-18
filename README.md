@@ -226,6 +226,16 @@ uv run swce-diagnose --subject swce.models:llava_15 methods/revis.py:build metho
 uv run swce-diagnose --summarize-only
 ```
 
+A linear probe is fitted on every block to tell the questions whose answer is yes from those
+whose answer is no, cross-validated over images. It finds what a block holds even where the head
+cannot read it, so it complements the logit lens in early blocks. Under a method it also reports
+how well the probe of the unmodified model still reads the stream and how far the method moves
+the stream along the direction of the answer. `--probe` writes `diagnostics/MODEL/probe-TASK.csv`.
+
+```bash
+uv run swce-diagnose --probe --subject swce.models:llava_15 methods/vti.py:build methods/vti.py:control methods/revis.py:build methods/revis.py:control --task pope-adversarial --limit 0
+```
+
 ## Running on several machines
 
 An evaluation has three stages, which run together by default and apart on request.
