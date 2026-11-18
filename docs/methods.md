@@ -163,6 +163,10 @@ images. Its scores are in `results/leaderboard.csv`.
   lowers MME by 302, with longer answers on MME. Its random control answers every task exactly as
   the unmodified model does, since its gate never opens at the calibrated threshold. The causes
   are below.
+- REVIS at block 30, the `table-11` setting, lowers CHAIR_S to 32.0 and raises MME by 43, and
+  lowers the F1 to 0.787 on POPE adversarial and to 0.770 on RePOPE. It ran later on the same
+  kind of card, after a calibration that gave block 31 the same threshold to the last digit.
+- Qwen3-VL and LLaVA-OneVision-1.5 have not been run.
 
 ### Why REVIS behaves so on LLaVA-1.5-7B
 
@@ -198,7 +202,22 @@ official one. The behaviour comes from what the recipe selects and from the prot
 - **The gate of the control cannot open.** For a random vector, the cosine with any state has a
   standard deviation of 1 over the square root of 4096, which is 0.016. The threshold of 0.195 is
   more than twelve deviations away, so the control never adds its vector.
-- Qwen3-VL and LLaVA-OneVision-1.5 have not been run.
+
+### REVIS at block 30
+
+- **The gate is open almost everywhere.** The calibration gives block 30 a threshold of -0.093,
+  so the gate opens wherever the cosine between the state and the vector is below 0.093. It opens
+  at the first answer token of every POPE question, for the method and for its control alike, so
+  at this block REVIS adds its vector nearly without condition.
+- **The method changes answers while keeping the text fluent.** It flips 218 of the 3000 POPE
+  answers and loses F1 on both label sets. Its descriptions keep their usual length, 109 tokens
+  against 107, and name fewer objects that are not in the image. Fourteen of them run to the
+  token limit in a loop of repeated words.
+- **The control breaks the text, which flatters its CHAIR.** The random vector of the norm of the
+  visual vector reaches a CHAIR_S of 25.4, below the method, but 181 of its 500 descriptions run to
+  the token limit and end in a loop of repeated characters or words. A description that names no object hallucinates
+  none, so its CHAIR is not comparable with that of the method. On POPE it flips 141 answers and
+  on MME it scores as the unmodified model does.
 
 The interventions, the fitting of the VTI directions, the principal direction of REVIS, its
 selection of a layer and the states VISTA reads are tested against the official code.

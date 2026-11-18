@@ -402,7 +402,9 @@ def test_revis_calibration_observes_every_layer_in_one_pass(tmp_path: Path) -> N
         written = json.loads(output.read_text(encoding="utf-8"))
         assert written["layer"] == expected[0]
         every = revis.thresholds(risks, categories, percentile=85.0)
-        assert written["taus"] == pytest.approx({str(layer): tau for layer, tau in every.items()})
+        # The two passes round differently in single precision.
+        expected_taus = {str(layer): tau for layer, tau in every.items()}
+        assert written["taus"] == pytest.approx(expected_taus, abs=1e-6)
     assert subject.listeners == []
 
 
