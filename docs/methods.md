@@ -156,7 +156,43 @@ images. Its scores are in `results/leaderboard.csv`.
   and a CHAIR_S of 50.2.
 - REVIS answers POPE and RePOPE exactly as the unmodified model does, raises CHAIR_S to 60.2 and
   lowers MME by 302, with longer answers on MME. Its random control answers every task exactly as
-  the unmodified model does, since its gate never opens at the calibrated threshold.
+  the unmodified model does, since its gate never opens at the calibrated threshold. The causes
+  are below.
+
+### Why REVIS behaves so on LLaVA-1.5-7B
+
+The port follows the official code at every step. The vectors are the ones the authors release,
+the calibration selects the layer and threshold as `layer_select.py` does, and the hook is the
+official one. The behaviour comes from what the recipe selects and from the protocol.
+
+- **The calibration selects the last block.** It searches downward from the top and stops at the
+  first block that separates false positives from correct answers. Block 31 already does, with a
+  threshold of 0.195. The paper names the same block in its Appendix C.3. Nothing comes after the
+  last block but the final normalization and the output head. Adding the vector there changes only
+  the next token at the positions where the gate opens. It reaches no later position, so it acts
+  as a bias on the logits.
+- **The vector of that block points against the vectors below it.** Block 31 reads the vector at
+  hidden state index 32, which the official code computes from the states after the final
+  normalization. Each vector is a principal component, and the sign of a principal component is
+  arbitrary. Every released visual vector has a positive cosine with the one of the index below,
+  above 0.9 from index 18 upward, except at indices 13, 25 and 32. There it is -0.85, -0.94 and
+  -0.75, so their sign is flipped. Index 31, which the paper uses at block 30 in its Table 11, is
+  on the other side of the last flip.
+- **The gate opens on MME and not at the first answer token of POPE.** The calibration measures
+  the risk at the last token of questions ending in "Please answer yes or no.", as the official
+  scripts ask them. MME questions end the same way, and on 1377 of its 2374 questions the gate
+  opens at that token. There it pushes the answer to "no", correcting 111 wrong yeses and breaking
+  365 right ones. POPE asks its questions unchanged here, without that sentence. On none of the
+  3000 questions does the probability of the first answer token change, so no answer of POPE or
+  RePOPE changes.
+- **The gate also opens on later tokens and keeps the model talking.** The official scripts stop
+  POPE and MME answers at ten tokens. Here every model generates with its shipped settings. Steered
+  answers average 40 tokens on POPE against 23 unsteered, and 47 on MME against 3. CHAIR
+  descriptions grow from 107 to 134 tokens and diverge after about 30 characters. The longer
+  descriptions name more objects that are not in the image, which raises CHAIR_S.
+- **The gate of the control cannot open.** For a random vector, the cosine with any state has a
+  standard deviation of 1 over the square root of 4096, which is 0.016. The threshold of 0.195 is
+  more than twelve deviations away, so the control never adds its vector.
 - Qwen3-VL and LLaVA-OneVision-1.5 have not been run.
 
 The interventions, the fitting of the VTI directions, the principal direction of REVIS, its
