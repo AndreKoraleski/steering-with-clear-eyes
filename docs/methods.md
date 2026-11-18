@@ -25,6 +25,31 @@ A method that cannot be instantiated on a model as its paper describes raises
 Every model generates with these settings, unchanged, and the random state is seeded before every
 generation. Answers of Qwen3-VL therefore depend on the seed, which is zero.
 
+### Loading LLaVA-OneVision-1.5
+
+The checkpoint ships model code written for `transformers` 4.53, which the pinned version of the
+library runs unchanged. Its first loads found six differences, each bridged in `swce.models.hf`
+so that the code behaves as it did under 4.53. Two of them loaded the model without any error
+and left it answering nonsense, so loading now fails unless every weight is read from the
+checkpoint and every buffer is finite.
+
+| Found on the first loads | Bridge |
+|---|---|
+| The code renames the weights of its checkpoint in `_checkpoint_conversion_mapping`, which the library now ignores, so the language model was left at random weights | The same renaming is given as `key_mapping` |
+| The library builds the model on the meta device and fills only what the checkpoint holds, so the rotary frequencies, buffers the constructors compute and the checkpoint does not save, were left uninitialized | Each rotary embedding is built again by its own class and its frequencies copied in |
+| The processor builds a video processor, which needs `torchvision` | `torchvision` is a dependency |
+| The language configuration has no `pad_token_id`, which the code reads | Set to None, its value under 4.53 |
+| The code builds its rotary embedding from the entry `default` of the library, which is gone | The computation of 4.53 is registered under that entry while the model is built, and removed afterwards |
+| The processor returns `mm_token_type_ids`, which the forward pass does not take | Inputs a forward pass does not name are left out, on any model whose forward pass names its arguments |
+
+The library passes `cache_position`, which the code reads, only to classes it marks as remote
+code, and warns that it will stop passing it in a future version. The class is fetched ahead of
+loading, to read its renaming, and marked by hand.
+
+On the first 40 questions of POPE adversarial, the model loaded this way gives the answers it gave
+under `transformers` 4.53 and PyTorch 2.5, all 40. Long descriptions part after a few dozen words,
+each time at a near tie of at most 0.25 logit, the step of bfloat16 at that magnitude.
+
 ## What differs from the official code on every model
 
 - **Benchmarks.** The official scripts ask their own prompts, for instance "Please help me
