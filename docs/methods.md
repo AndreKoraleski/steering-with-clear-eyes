@@ -266,6 +266,38 @@ or REVIS.
   the unmodified descriptions. The cause of the difference is not known, and the finding holds
   for this protocol.
 
+### Linear probes on POPE adversarial
+
+`swce-diagnose --probe` fitted a probe of the expected answer on every block, on the 3000
+questions of POPE adversarial, under the unmodified model, VTI at its POPE setting, REVIS at both
+blocks and their controls. The probes were cross-validated over images with five folds.
+
+| Block | 0 | 4 | 6 | 8 | 10 | 11 | 13 | 16 | 24 | 31 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Probe of the unmodified model, AUROC | 0.639 | 0.675 | 0.749 | 0.853 | 0.898 | 0.905 | 0.908 | 0.906 | 0.905 | 0.905 |
+| Logit lens of the unmodified model, AUROC | 0.521 | 0.478 | 0.488 | 0.444 | 0.497 | 0.600 | 0.886 | 0.910 | 0.906 | 0.907 |
+
+- **The answer is readable four blocks before the logit lens shows it.** The probe reaches 0.85
+  at block 8 and 0.90 at block 10, where the lens is still at chance. Blocks 6 to 11 are where
+  the stream comes to hold the answer, and the lens only reads it once the head can, from block
+  12.
+- **Nothing is lost after block 11.** The probe stays at 0.90 to 0.91 from block 11 to the
+  output, the same as the final answer of the model reaches. The errors of the unmodified model
+  on POPE are not information that a later block discards.
+- **No method adds what the stream holds about the answer.** A probe fitted under REVIS, at
+  either block, or under its control, matches the unmodified probe to the third decimal. Under
+  VTI it is lower between blocks 8 and 14, 0.832 against 0.853 at block 8 and 0.888 against 0.905
+  at block 11, and the same from block 16 on.
+- **VTI moves the early stream far from where the unmodified probe reads it.** The probe of the
+  unmodified model, applied under VTI, falls to 0.51 to 0.53 between blocks 4 and 8, and its
+  score moves by up to nine standard deviations, with a sign that changes from block to block.
+  Its random control does the same, less, falling to 0.52 to 0.60. A probe fitted under VTI still
+  finds the answer there, so VTI displaces the early stream rather than erasing what it holds.
+- **REVIS at block 30 displaces the stream just as its random control does.** The unmodified
+  probe falls to 0.65 at block 30 under REVIS and to 0.67 under the control, while a probe fitted
+  under either still reaches 0.90. At block 31, REVIS changes nothing at the last prompt token,
+  as its gate stays shut there.
+
 The interventions, the fitting of the VTI directions, the principal direction of REVIS, its
 selection of a layer and the states VISTA reads are tested against the official code.
 
