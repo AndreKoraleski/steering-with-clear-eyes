@@ -22,6 +22,7 @@ import json
 import os
 import random
 import sys
+import time
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -92,6 +93,7 @@ def train(
     latents: int,
     batch: int = BATCH,
     limit: int | None = None,
+    every: float = 1200,
 ) -> list[Path]:
     """Train one autoencoder per block and seed and store them under the artifacts.
 
@@ -105,6 +107,9 @@ def train(
         latents: Latents of every autoencoder.
         batch: States in every step.
         limit: Examples of every pass, or None for all of them, to rehearse.
+        every: Seconds between checkpoints, from which a stopped training restarts when run
+            again, or zero for none. They sit next to the autoencoders and are removed at the
+            end.
 
     Returns:
         The files of the autoencoders.
@@ -122,11 +127,41 @@ def train(
         bank, [list(blocks).index(b) for b, _ in pairs], capacity=capacity, batch=batch
     )
     folder = sae_root(subject.name)
+    folder.mkdir(parents=True, exist_ok=True)
     tag = "-".join(str(block) for block in blocks)
-    for epoch in range(epochs):
+    checkpoint = folder / f"checkpoint-{tag}.pt"
+    start, first = 0, 0
+    if checkpoint.exists():
+        state = torch.load(checkpoint, map_location=subject.device, weights_only=True)
+        trainer.restore(state["trainer"])
+        start, first = int(state["epoch"]), int(state["index"])
+        print(f"resuming epoch {start + 1} at example {first}", flush=True)
+
+    def keep(epoch: int, index: int) -> None:
+        # Written aside and then renamed, so that a stop while writing keeps the last one.
+        partial = checkpoint.with_suffix(".partial")
+        torch.save({"trainer": trainer.state(), "epoch": epoch, "index": index}, partial)
+        partial.replace(checkpoint)
+
+    written: list[Path] = []
+    last = time.monotonic()
+    for epoch in range(start, epochs):
+        # Every pass has its own order and image tokens, both fixed by its index, so a restart
+        # reads exactly the examples that were left.
         order = random.Random(epoch).sample(examples, len(examples))
-        for example in tqdm(order, desc=f"epoch {epoch + 1} of {epochs}", mininterval=30):
-            trainer.add(read(subject, example, blocks, seed=epoch).states)
+        begin = first if epoch == start else 0
+        steps = tqdm(
+            range(begin, len(order)),
+            desc=f"epoch {epoch + 1} of {epochs}",
+            initial=begin,
+            total=len(order),
+            mininterval=30,
+        )
+        for index in steps:
+            trainer.add(read(subject, order[index], blocks, seed=epoch).states)
+            if every and time.monotonic() - last > every:
+                keep(epoch, index + 1)
+                last = time.monotonic()
         if epoch == epochs - 1:
             trainer.finish()
         written = save(bank, folder)
@@ -134,7 +169,11 @@ def train(
         history.to_csv(folder / f"history-{tag}.csv", index=False, lineterminator="\n")
         if len(history):
             print(history.groupby(["block", "seed"]).tail(1).to_string(index=False), flush=True)
+        if every and epoch < epochs - 1:
+            keep(epoch + 1, 0)
+            last = time.monotonic()
     (folder / f"done-{tag}").write_text(f"{trainer.tokens} tokens in {trainer.steps} steps\n")
+    checkpoint.unlink(missing_ok=True)
     return written
 
 
@@ -557,6 +596,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--batch", type=int, default=BATCH, help="states in every step")
     parser.add_argument("--capacity", type=int, default=2**18, help="states the buffer holds")
     parser.add_argument("--limit", type=int, default=0, help="examples per pass, 0 for all")
+    parser.add_argument(
+        "--checkpoint-every",
+        type=float,
+        default=1200,
+        help="seconds between checkpoints, 0 for none",
+    )
     parser.add_argument("--task", default="pope-adversarial")
     parser.add_argument("--items", type=int, default=0, help="images of the task, 0 for all")
     parser.add_argument("--held", type=int, default=1000, help="held-out examples to check")
@@ -582,6 +627,7 @@ def main(argv: list[str] | None = None) -> int:
             latents=args.latents,
             batch=args.batch,
             limit=args.limit or None,
+            every=args.checkpoint_every,
         )
     else:
         directions = args.directions or artifacts_root() / f"vti_{subject.name}.pt"

@@ -271,6 +271,36 @@ class Trainer:
         self.initialized = False
         self.history: list[dict[str, float]] = []
 
+    def state(self) -> dict[str, Any]:
+        """Everything a restart needs, except the states waiting in the buffer.
+
+        The buffer is left out because it is as large as the autoencoders. A restart loses
+        those states, at most `capacity` of them, which is a fraction of one pass.
+        """
+        return {
+            "bank": self.bank.state_dict(),
+            "optimizer": self.optimizer.state_dict(),
+            "generator": self.generator.get_state(),
+            "tokens": self.tokens,
+            "steps": self.steps,
+            "idle": self.idle,
+            "initialized": self.initialized,
+            "history": self.history,
+        }
+
+    def restore(self, state: dict[str, Any]) -> None:
+        """Continue from a state returned by `state`, with an empty buffer."""
+        self.bank.load_state_dict(state["bank"])
+        self.optimizer.load_state_dict(state["optimizer"])
+        self.generator.set_state(state["generator"].cpu())
+        self.tokens = int(state["tokens"])
+        self.steps = int(state["steps"])
+        self.idle = state["idle"].to(self.device)
+        self.initialized = bool(state["initialized"])
+        self.history = list(state["history"])
+        self.buffer = None
+        self.filled = 0
+
     def add(self, states: Tensor) -> None:
         """Add the states of one pass and train on the buffer whenever it fills.
 

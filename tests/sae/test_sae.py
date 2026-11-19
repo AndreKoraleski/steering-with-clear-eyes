@@ -157,3 +157,27 @@ def test_read_tags_every_position_of_a_tiny_llava(monkeypatch: pytest.MonkeyPatc
     assert reading.tags.tolist() == [IMAGE, IMAGE, PROMPT, PROMPT, RESPONSE, RESPONSE, RESPONSE]
     assert reading.positions[-3:].tolist() == [7, 8, 9]
     assert reading.logits.shape[0] == 10
+
+
+def test_trainer_continues_from_its_state() -> None:
+    states, _ = planted(6000)
+    bank = Bank([0], [0], 16, latents=64, k=2)
+    trainer = Trainer(bank, [0], capacity=1024, batch=128)
+    for start in range(0, 3000, 500):
+        trainer.add(states[start : start + 500, None])
+    saved = trainer.state()
+    copy = Bank([0], [0], 16, latents=64, k=2)
+    restarted = Trainer(copy, [0], capacity=1024, batch=128)
+    restarted.restore(saved)
+    assert restarted.steps == trainer.steps and restarted.tokens == trainer.tokens
+    assert torch.equal(copy.decoder, bank.decoder) and torch.equal(copy.scale, bank.scale)
+    assert restarted.initialized and restarted.filled == 0
+    for start in range(3000, 6000, 500):
+        trainer.add(states[start : start + 500, None])
+        restarted.add(states[start : start + 500, None])
+    # The restart only lost the states waiting in the buffer, so both go on learning alike.
+    assert restarted.steps > saved["steps"]
+    with torch.no_grad():
+        first = unexplained(states[:1000], bank(states[None, :1000])[0])
+        second = unexplained(states[:1000], copy(states[None, :1000])[0])
+    assert abs(first - second) < 0.05
