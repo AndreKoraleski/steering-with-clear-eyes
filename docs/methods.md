@@ -402,7 +402,7 @@ POPE question was scored by the probe of its object on its own image.
 | AUROC over the POPE questions | 0.58 | 0.67 | 0.77 | 0.82 | 0.83 | 0.82 | 0.83 |
 
 - **The encoder holds most of the answer, and the language model at least as much.** The probes
-  reach 0.83 from block 16 of the encoder to the projector, where the probes of the residual
+  reach 0.82 to 0.83 from block 16 of the encoder to the projector, where the probes of the residual
   stream reach 0.90 by block 10 and the model answers at 0.91. The language model does not lose
   what the encoder sees.
 - **The comparison is a lower bound on the encoder.** The probes read the mean over all image
