@@ -323,6 +323,76 @@ blocks and their controls. The probes were cross-validated over images with five
   under either still reaches 0.90. At block 31, REVIS changes nothing at the last prompt token,
   as its gate stays shut there.
 
+### Sparse autoencoders on four blocks
+
+`swce-sae` trained TopK autoencoders of 32768 latents, with 64 kept per state, on blocks 9, 13,
+24 and 30, two seeds per block. Blocks 9 and 13 are where the probes and the lens first read the
+answer, and 24 and 30 are a late block and the block of REVIS `table-11`. They trained on 6.1
+million states from COCO train2014 only: the 5000 Nullu descriptions, the 5952 REVIS
+calibration questions and 256 descriptions the model wrote itself, in three passes, on one
+NVIDIA A100-SXM4-80GB with the locked environment. The checks below were fixed before training.
+The two readings ran on the 3000 questions of POPE adversarial and the checks on 1000 held-out
+sequences.
+
+| Block | 9 | 13 | 24 | 30 |
+|---|---|---|---|---|
+| Unexplained variance at the end of training | 6.1% | 9.3% | 13.2% | 15.0% |
+| Held out, image tokens of the descriptions | 6.4% | 9.6% | 17.4% | 21.9% |
+| Held out, description text | 18.5% | 18.0% | 14.2% | 15.1% |
+| Latents that never fire on the held-out states | 3.5% | 0.5% | 0% | 0% |
+| Next token loss on the descriptions, from 1.220 nats | +0.059 | +0.069 | +0.094 | +0.158 |
+| Latents of one seed matched by the other above a cosine of 0.7 | 2.1% | 1.9% | 3.1% | 2.7% |
+| Best single latent for a hallucinated yes, AUROC on the held-out half | 0.79 | 0.87 | 0.87 | 0.87 |
+
+Both seeds give the same figures to within a few tenths of a point.
+
+- **Reconstruction passes.** The autoencoders keep most of the variance of every kind of token
+  and cost under 0.16 nats of next-token loss when they replace a block. Description text is the
+  hardest at the early blocks and image tokens at the late ones.
+- **Replication across seeds fails.** Only 2 to 3% of the latents of one seed have a match
+  above a cosine of 0.7 in the other, and the median best match is 0.21 to 0.28. Autoencoders of
+  this size trained on hundreds of millions of tokens usually share most of their latents. Six
+  million are too few for the dictionary to settle. Each latent is one solution among many, and
+  none can be named as a feature of the model. The latents the readings below name replicate no
+  better. The readings are therefore stated only where both seeds agree, as patterns, and no
+  latent is interpreted.
+- **The position of the answer is poorly described.** The checks measure the unexplained
+  variance across the 3000 questions at that one position, where the states differ little. It is
+  57% at block 9 and 21 to 29% after it, so what separates one question from another there is
+  only partly in the latents.
+- **The steered states fall outside the dictionary.** At the position of the answer, the
+  unexplained variance under VTI is 10 times that of the unmodified model at block 9 and 2.8 to 4.4
+  times at the later blocks. Under REVIS at block 30 it is 34 to 37 times. Both methods put the stream
+  where the model itself never goes. This agrees with the probes, which found the unmodified
+  probe failing under both, and limits what any reading through these autoencoders can say about
+  them. REVIS at block 31 leaves every state of these blocks as it was, as its gate stays shut at
+  that position.
+- **VTI's direction is not sparse in the dictionary.** At every block the ten latents closest to
+  its direction explain 40 to 47% of it and fifty explain 57 to 72%, and no latent has a cosine
+  above 0.50 with it. The ten latents whose activation it changes most carry 19 to 26% of its
+  total change. At blocks 9 and 13 they all fall, with decoder rows nearly orthogonal to its
+  direction, which is what renormalizing the stream after a shift does to everything else in it.
+  At blocks 24 and 30 the latents that rise are the ones aligned with its direction. The
+  direction of the block itself explains little of what VTI does to it there, with a cosine of
+  0.17 at block 9 against 0.57 to 0.64 at blocks 24 and 30, since earlier blocks are shifted too.
+- **The stream separates a hallucinated yes from a correct one.** Among the 1851 questions the
+  unmodified model answers yes, 507 hallucinate. Single latents chosen on half the images tell
+  them apart with an AUROC of 0.87 on the other half from block 13 on, and 0.79 at block 9, in
+  both seeds. Their decoder rows have cosines of 0.3 to 0.6 with the difference of the mean states
+  of the two groups, which uses no autoencoder. So at the moment it says yes the model often
+  holds the evidence that the object is absent, as the probes suggested.
+- **VTI moves the same latents, mostly away from correct answers.** Many of the latents VTI
+  changes most are also among those that best separate the two kinds of yes, at every block and
+  in both seeds. It mostly lowers the ones that are higher when the yes is correct, which is
+  consistent with VTI damping the evidence for yes rather than sharpening it, and with the d'
+  it lowers. Most of these latents fire on every question, so they are the directions of largest
+  variance at that position, and the overlap may come from that alone.
+
+These readings are correlational. Removing a latent and watching the answers would test whether
+it matters, and needs autoencoders that replicate first, so a longer training. The trained
+autoencoders, their curves and the tables of these checks are kept with the data and are not
+committed.
+
 The interventions, the fitting of the VTI directions, the principal direction of REVIS, its
 selection of a layer and the states VISTA reads are tested against the official code.
 
