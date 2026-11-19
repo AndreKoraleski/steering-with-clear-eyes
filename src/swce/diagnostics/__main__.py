@@ -54,6 +54,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--encoder", action="store_true", help="probe the vision encoder")
     parser.add_argument("--knockout", action="store_true", help="block attention routes by window")
     parser.add_argument(
+        "--patching", action="store_true", help="patch correct runs into wrong yeses"
+    )
+    parser.add_argument(
+        "--attention", action="store_true", help="norm-weighted attention on the object regions"
+    )
+    parser.add_argument("--pairs", type=int, default=200, help="pairs of the patching")
+    parser.add_argument(
+        "--items", action="store_true", help="read the saved yes or no answers item by item"
+    )
+    parser.add_argument(
         "--knockout-items", type=int, default=200, help="wrong yeses and correct answers to block"
     )
     parser.add_argument(
@@ -67,6 +77,8 @@ def main(argv: list[str] | None = None) -> int:
     configure_logging()
     if args.data is not None:
         os.environ[DATA_ENV] = str(args.data)
+    if args.items:
+        return read_items(args)
     if args.summarize_only:
         for path in summarize_results(args.results):
             print(path)
@@ -76,7 +88,7 @@ def main(argv: list[str] | None = None) -> int:
     subject = load_factory(args.subject)()
     if not isinstance(subject, Subject):
         raise TypeError(f"{args.subject} built {type(subject).__name__}, not a Subject")
-    if args.prior or args.encoder or args.knockout:
+    if args.prior or args.encoder or args.knockout or args.patching or args.attention:
         return localize(subject, args)
     steerers = load_steerers(args.methods)
     if args.probe:
@@ -100,11 +112,52 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
+def read_items(args: argparse.Namespace) -> int:
+    """Read the saved answers of a results folder item by item, without a model."""
+    import pandas as pd
+
+    from swce.diagnostics.coco import cooccurrence, image_objects
+    from swce.diagnostics.items import (
+        change_readings,
+        first_token_readings,
+        load_answers,
+        object_readings,
+        relabel_readings,
+        subtask_readings,
+    )
+    from swce.diagnostics.prior import write_frames
+    from swce.tasks.task import Task
+
+    answers = load_answers(args.results)
+    questions = {item.id: item.prompt for item in Task("pope-adversarial", args.data).items()}
+    objects, correlation = object_readings(
+        answers, questions, image_objects("val"), cooccurrence(image_objects("train"))
+    )
+    frames = [
+        ("items-objects", objects),
+        ("items-objects-correlation", correlation),
+        ("items-changes", change_readings(answers)),
+        ("items-relabel", relabel_readings(answers)),
+        ("items-first-token", first_token_readings(answers)),
+    ]
+    board = args.results / "leaderboard.csv"
+    if board.exists():
+        frames.append(("items-subtasks", subtask_readings(pd.read_csv(board))))
+    for name, frame in frames:
+        print(name)
+        print(frame.head(40).to_string(index=False))
+    for path in write_frames(frames, args.results / "diagnostics" / "items"):
+        print(path)
+    return 0
+
+
 def localize(subject: Subject, args: argparse.Namespace) -> int:
     """Run the readings that localize a wrong answer, on the unmodified model."""
-    from swce.diagnostics.coco import categories, image_objects
+    from swce.diagnostics.attention import attention_task, summarize_attention, visibility
+    from swce.diagnostics.coco import categories, image_boxes, image_objects
     from swce.diagnostics.encoder import encoder_task
     from swce.diagnostics.knockout import knockout_task, summarize_knockout
+    from swce.diagnostics.patching import patching_task, summarize_patching
     from swce.diagnostics.prior import margins, prior_task, write_frames
     from swce.models.hf import HuggingFaceSubject
     from swce.sae.harvest import descriptions, fetch_all, open_image
@@ -119,15 +172,31 @@ def localize(subject: Subject, args: argparse.Namespace) -> int:
         answers, summary = prior_task(subject, args.task, limit=limit, data=args.data)
         frames += [(f"prior-{args.task}", answers), (f"prior-{args.task}-summary", summary)]
         print(summary.to_string(index=False, float_format=lambda value: f"{value:.3f}"))
+    if answers is None and (args.knockout or args.patching or args.attention):
+        answers = margins(subject, args.task, limit=limit, data=args.data)
     if args.knockout:
-        if answers is None:
-            answers = margins(subject, args.task, limit=limit, data=args.data)
+        assert answers is not None
         knocked = knockout_task(
             subject, args.task, answers, per_kind=args.knockout_items, data=args.data
         )
         summary = summarize_knockout(knocked)
         frames += [(f"knockout-{args.task}", knocked), (f"knockout-{args.task}-summary", summary)]
         print(summary.to_string(index=False, float_format=lambda value: f"{value:.3f}"))
+    if args.patching:
+        assert answers is not None
+        patched = patching_task(subject, args.task, answers, pairs=args.pairs, data=args.data)
+        summary = summarize_patching(patched)
+        frames += [(f"patching-{args.task}", patched), (f"patching-{args.task}-summary", summary)]
+        print(summary.to_string(index=False, float_format=lambda value: f"{value:.3f}"))
+    if args.attention:
+        assert answers is not None
+        looked = attention_task(subject, args.task, answers, image_boxes("val"), data=args.data)
+        frames += [
+            (f"attention-{args.task}", looked),
+            (f"attention-{args.task}-summary", summarize_attention(looked)),
+            (f"attention-{args.task}-visibility", visibility(looked)),
+        ]
+        print(visibility(looked).to_string(index=False))
     if args.encoder:
         train = image_objects("train")
         images = list(dict.fromkeys(example.image for example in descriptions()))

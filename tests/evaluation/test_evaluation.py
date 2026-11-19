@@ -274,7 +274,12 @@ def test_the_environment_and_the_analyses_are_written_with_the_results(tmp_path:
 
 
 def test_task_selection(tmp_path: Path) -> None:
-    assert select_tasks(["pope-*"]) == ["pope-random", "pope-popular", "pope-adversarial"]
+    assert select_tasks(["pope-*"]) == [
+        "pope-random",
+        "pope-popular",
+        "pope-adversarial",
+        "pope-adversarial-yn",
+    ]
     assert "mme" in select_tasks([])
     with pytest.raises(ValueError, match="no task matches"):
         select_tasks(["missing"])

@@ -1,3 +1,5 @@
+from typing import Any
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -172,3 +174,87 @@ def test_image_features_read_every_encoder_block(monkeypatch: pytest.MonkeyPatch
     encoder, projected = image_features(subject, Image.new("RGB", (28, 28)))
     assert encoder.shape == (3, 16)
     assert projected is not None and projected.shape == (16,)
+
+
+def test_object_of_reads_the_variant_with_its_instruction() -> None:
+    assert object_of("Is there a dog in the image? Please answer yes or no.") == "dog"
+
+
+def test_find_span_finds_the_last_run_of_tokens() -> None:
+    from swce.diagnostics.patching import find_span
+
+    assert find_span([5, 7, 8, 1, 7, 8], [7, 8]) == [4, 5]
+    assert find_span([5, 7], [9]) == []
+
+
+def test_patching_every_position_reproduces_the_other_run() -> None:
+    from swce.diagnostics.patching import patched
+    from swce.sae.harvest import capture
+
+    subject = tiny_llava()
+    layers = subject.decoder_layers()
+    bad = tiny_inputs(subject)
+    good = dict(bad, pixel_values=torch.ones_like(bad["pixel_values"]))
+    with torch.no_grad(), capture(layers, [0]) as found:
+        target = subject.model(**good).logits[0, -1]
+    states = found[0].clone()
+    everything = torch.arange(bad["input_ids"].shape[1])
+    with torch.no_grad(), patched(layers[0], everything, states):
+        restored = subject.model(**bad).logits[0, -1]
+    with torch.no_grad():
+        untouched = subject.model(**bad).logits[0, -1]
+    assert torch.allclose(restored, target, atol=1e-5)
+    assert not torch.allclose(untouched, target, atol=1e-4)
+
+
+def test_pairs_join_a_wrong_yes_to_a_correct_no_on_another_image() -> None:
+    from swce.diagnostics.patching import pairs_of
+
+    answers = pd.DataFrame(
+        {
+            "id": ["1", "2", "3", "4"],
+            "group": ["a", "b", "a", "c"],
+            "object": ["dog", "dog", "dog", "cat"],
+            "label": ["no", "no", "no", "no"],
+            "margin": [1.0, -1.0, -2.0, 3.0],
+        }
+    )
+    assert pairs_of(answers, 5) == [("1", "2")]
+
+
+def test_grid_places_boxes_on_the_centre_crop() -> None:
+    from swce.diagnostics.attention import Grid
+
+    grid = Grid(shortest=336, crop=336, patch=14)
+    assert grid.side == 24
+    assert grid.visible(672, 336, [0, 0, 100, 100]) == 0.0
+    assert grid.cells(672, 336, [0, 0, 100, 100]) == []
+    assert grid.cells(672, 336, [168, 0, 14, 14]) == [0]
+    assert grid.cells(672, 336, [168 + 14, 14, 28, 1]) == [25, 26]
+    assert grid.visible(672, 336, [100, 0, 136, 10]) == pytest.approx(0.5)
+    padded = Grid(shortest=336, crop=336, patch=14, pad=True)
+    assert padded.visible(672, 336, [0, 0, 100, 100]) == pytest.approx(1.0)
+
+
+def test_head_value_norms_match_the_product_of_every_head() -> None:
+    from swce.diagnostics.attention import head_value_norms
+
+    values = torch.randn(5, 8)
+    output = torch.randn(6, 8)
+    norms = head_value_norms(values, output, heads=2)
+    expected = (values[:, 4:] @ output[:, 4:].T).norm(dim=-1)
+    assert torch.allclose(norms[1], expected, atol=1e-5)
+    shared = head_value_norms(values[:, :4], output, heads=2)
+    assert torch.allclose(shared[1], (values[:, :4] @ output[:, 4:].T).norm(dim=-1), atol=1e-5)
+
+
+def test_answer_attention_is_a_share_of_every_position() -> None:
+    from swce.diagnostics.attention import answer_attention
+
+    subject = tiny_llava()
+    model: Any = subject.model
+    before = model.config._attn_implementation
+    shares = answer_attention(subject, tiny_inputs(subject))
+    assert shares.shape == (4, 7)
+    assert torch.allclose(shares.sum(dim=-1), torch.ones(4), atol=1e-5)
+    assert model.config._attn_implementation == before
