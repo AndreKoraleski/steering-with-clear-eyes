@@ -11,6 +11,11 @@ decide the answer.
 Three groups of positions are patched: the image tokens, the tokens of the object named in the
 question, and the position of the answer. Patching across images swaps the whole image, not only
 the object, which the readings must keep in mind.
+
+Qwen3-VL adds features of its vision encoder to the image tokens again in its first decoder
+blocks, which it calls DeepStack. A patch of the image tokens at one of those blocks is partly
+overwritten by the next injection from the hallucinating image, so those rows are marked
+`reinjected`. The other groups of positions are never injected into.
 """
 
 from collections.abc import Iterator, Sequence
@@ -78,17 +83,19 @@ def patched(layer: nn.Module, positions: Tensor, states: Tensor) -> Iterator[Non
         handle.remove()
 
 
-def pairs_of(answers: pd.DataFrame, count: int, seed: int = 0) -> list[tuple[str, str]]:
-    """Pairs of a wrong yes and a correct no to the same question on other images.
+def pairs_of(answers: pd.DataFrame, count: int, seed: int = 0) -> list[tuple[str, list[str]]]:
+    """Wrong yeses, each with the correct noes to the same question on other images.
 
     Args:
         answers: Rows of `swce.diagnostics.prior.margins`, whose margin with the image tells the
             answer of the model.
-        count: Pairs to draw, at most.
-        seed: Seed of the draw.
+        count: Wrong yeses to draw, at most.
+        seed: Seed of the draw and of the order of the partners.
 
     Returns:
-        The identifiers of the hallucinating and of the correct question of every pair.
+        The identifier of every wrong yes drawn, with those of its partners in a random order.
+        A model whose images give varying numbers of tokens can only be patched with a partner
+        of the same length, so the partners are tried in turn.
     """
     absent = answers[answers["label"] == "no"]
     wrong = absent[absent["margin"] > 0]
@@ -99,11 +106,17 @@ def pairs_of(answers: pd.DataFrame, count: int, seed: int = 0) -> list[tuple[str
         row = wrong.iloc[index]
         partners = right[(right["object"] == row["object"]) & (right["group"] != row["group"])]
         if len(partners):
-            partner = partners.iloc[generator.integers(len(partners))]
-            found.append((str(row["id"]), str(partner["id"])))
+            order = generator.permutation(len(partners))
+            found.append((str(row["id"]), [str(partners["id"].iloc[i]) for i in order]))
         if len(found) == count:
             break
     return found
+
+
+def _vision_config(subject: HuggingFaceSubject) -> Any:
+    """Configuration of the vision encoder of a subject, or None."""
+    model: Any = subject.model
+    return getattr(model.config, "vision_config", None)
 
 
 def patch_pair(
@@ -128,6 +141,7 @@ def patch_pair(
         "answer": [len(identifiers) - 1],
     }
     gap = bad_margin - good_margin
+    injected = len(getattr(_vision_config(subject), "deepstack_visual_indexes", None) or [])
     rows = []
     for group in GROUPS:
         positions = torch.tensor(groups[group], dtype=torch.long)
@@ -147,6 +161,7 @@ def patch_pair(
                     "target": good_margin,
                     "patched": changed,
                     "restored": (bad_margin - changed) / gap if gap else float("nan"),
+                    "reinjected": group == "image" and block < injected,
                 }
             )
     return rows
@@ -158,22 +173,37 @@ def patching_task(
     answers: pd.DataFrame,
     *,
     pairs: int = 200,
+    tries: int = 20,
     seed: int = 0,
     data: Any = None,
 ) -> pd.DataFrame:
     """Patching on pairs of wrong yeses and correct noes of a POPE task.
 
+    Every wrong yes is patched with the first of its partners whose sequence has the same length,
+    trying at most `tries` of them. On LLaVA-1.5, whose images all give 576 tokens, the first
+    partner always fits. Draws continue until `pairs` wrong yeses are patched or none is left.
+
     Returns:
         One row per pair, group and block, with the share of the gap of the margin the patch
-        restores, one when the patched run answers as the correct one does.
+        restores, one when the patched run answers as the correct one does, and the number of
+        partners tried before one fit.
     """
     bound = Task(task, data)
     items = {item.id: item for item in bound.items()}
-    rows = []
-    for wrong, right in tqdm(
-        pairs_of(answers, pairs, seed), desc=f"patching {task}", mininterval=30
-    ):
-        rows += patch_pair(subject, bound, items[wrong], items[right])
+    rows: list[dict[str, Any]] = []
+    done = 0
+    progress = tqdm(total=pairs, desc=f"patching {task}", mininterval=30)
+    for wrong, partners in pairs_of(answers, len(answers), seed):
+        for tried, right in enumerate(partners[:tries], start=1):
+            found = patch_pair(subject, bound, items[wrong], items[right])
+            if found:
+                rows += [dict(row, tried=tried) for row in found]
+                done += 1
+                progress.update()
+                break
+        if done == pairs:
+            break
+    progress.close()
     return pd.DataFrame(rows)
 
 

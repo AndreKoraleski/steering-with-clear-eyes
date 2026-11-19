@@ -99,6 +99,61 @@ class Grid:
         ]
 
 
+class ResizedGrid:
+    """Where a box lands on the tokens of a processor that resizes without cropping.
+
+    Qwen3-VL and LLaVA-OneVision-1.5 resize every image to a whole number of patches, keeping its
+    aspect, and merge each square of `merge` by `merge` patches into one token of the language
+    model, in row-major order. The processor returns the size of the resized image in patches as
+    `image_grid_thw`, which fixes where every token lies.
+
+    Attributes:
+        rows: Patches along the height of the resized image.
+        columns: Patches along its width.
+        patch: Side of a patch in pixels.
+        merge: Patches merged along each side into one token.
+    """
+
+    def __init__(self, rows: int, columns: int, patch: int, merge: int) -> None:
+        """Describe the grid of one image."""
+        self.rows, self.columns, self.patch, self.merge = rows, columns, patch, merge
+
+    @classmethod
+    def of(cls, subject: HuggingFaceSubject, inputs: Mapping[str, Tensor]) -> "ResizedGrid":
+        """Grid of the image of one input, from the grid its processor returned."""
+        _, rows, columns = (int(value) for value in inputs["image_grid_thw"][0].tolist())
+        model: Any = subject.model
+        vision = model.config.vision_config
+        return cls(rows, columns, int(vision.patch_size), int(vision.spatial_merge_size))
+
+    def _place(self, width: int, height: int, box: Sequence[float]) -> tuple[float, ...]:
+        x, y, w, h = box
+        scale_x = self.columns * self.patch / width
+        scale_y = self.rows * self.patch / height
+        return (x * scale_x, y * scale_y, w * scale_x, h * scale_y)
+
+    def visible(self, width: int, height: int, box: Sequence[float]) -> float:
+        """Share of a box the resized image keeps, which is all of it."""
+        return 1.0
+
+    def cells(self, width: int, height: int, box: Sequence[float]) -> list[int]:
+        """Tokens of the language model, in row-major order, whose square overlaps a box."""
+        x, y, w, h = self._place(width, height, box)
+        cell = self.patch * self.merge
+        across, down = self.columns // self.merge, self.rows // self.merge
+        left, top = max(0.0, x), max(0.0, y)
+        right, bottom = min(float(across * cell), x + w), min(float(down * cell), y + h)
+        if right <= left or bottom <= top:
+            return []
+        first_col, last_col = int(left // cell), int((right - 1e-9) // cell)
+        first_row, last_row = int(top // cell), int((bottom - 1e-9) // cell)
+        return [
+            row * across + col
+            for row in range(first_row, last_row + 1)
+            for col in range(first_col, last_col + 1)
+        ]
+
+
 def head_value_norms(values: Tensor, output: Tensor, heads: int) -> Tensor:
     """Norm of what every head writes from every position, `(heads, positions)`.
 
@@ -201,7 +256,7 @@ def attention_task(
         objects of the image, with the share of the object inside the crop.
     """
     bound = Task(task, data)
-    grid = Grid.of(subject)
+    fixed = None if not subject.fixed_grid else Grid.of(subject)
     margins = dict(zip(answers["id"].astype(str), answers["margin"], strict=True))
     image = image_token(subject)
     rows = []
@@ -212,6 +267,7 @@ def attention_task(
         identifiers = inputs["input_ids"][0].cpu()
         positions = torch.nonzero(identifiers == image).flatten()
         shares = answer_attention(subject, inputs)
+        grid: Grid | ResizedGrid = fixed if fixed is not None else ResizedGrid.of(subject, inputs)
         width, height, objects = boxes.get(item.group, (1, 1, []))
         target = object_of(item.prompt)
         asked = [

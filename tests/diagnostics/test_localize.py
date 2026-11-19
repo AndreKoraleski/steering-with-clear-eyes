@@ -219,7 +219,7 @@ def test_pairs_join_a_wrong_yes_to_a_correct_no_on_another_image() -> None:
             "margin": [1.0, -1.0, -2.0, 3.0],
         }
     )
-    assert pairs_of(answers, 5) == [("1", "2")]
+    assert pairs_of(answers, 5) == [("1", ["2"])]
 
 
 def test_grid_places_boxes_on_the_centre_crop() -> None:
@@ -259,3 +259,84 @@ def test_answer_attention_is_a_share_of_every_position() -> None:
     assert shares.shape == (4, 7)
     assert torch.allclose(shares.sum(dim=-1), torch.ones(4), atol=1e-5)
     assert model.config._attn_implementation == before
+
+
+def test_resized_grid_places_boxes_on_merged_tokens() -> None:
+    from swce.diagnostics.attention import ResizedGrid
+
+    grid = ResizedGrid(rows=4, columns=6, patch=14, merge=2)
+    assert grid.cells(168, 112, [0, 0, 50, 50]) == [0]
+    assert grid.cells(168, 112, [120, 60, 40, 40]) == [5]
+    assert grid.cells(168, 112, [0, 0, 168, 112]) == [0, 1, 2, 3, 4, 5]
+    assert grid.visible(168, 112, [0, 0, 10, 10]) == 1.0
+
+
+def test_resized_grid_reads_the_grid_the_processor_returns() -> None:
+    from tiny import tiny_qwen
+
+    from swce.diagnostics.attention import ResizedGrid
+
+    subject = tiny_qwen()
+    grid = ResizedGrid.of(subject, tiny_inputs(subject))
+    assert (grid.rows, grid.columns, grid.patch, grid.merge) == (2, 2, 14, 2)
+    assert grid.cells(28, 28, [0, 0, 28, 28]) == [0]
+
+
+def test_patching_reproduces_the_other_run_on_a_tiny_qwen() -> None:
+    from tiny import tiny_qwen
+
+    from swce.diagnostics.patching import patched
+    from swce.sae.harvest import capture
+
+    subject = tiny_qwen()
+    layers = subject.decoder_layers()
+    bad = tiny_inputs(subject)
+    good = dict(bad, pixel_values=torch.ones_like(bad["pixel_values"]))
+    # The tiny Qwen3-VL injects its vision features once more after block 0, as DeepStack does,
+    # so a patch reproduces the other run from block 1 on.
+    with torch.no_grad(), capture(layers, [0, 1]) as found:
+        target = subject.model(**good).logits[0, -1]
+    everything = torch.arange(bad["input_ids"].shape[1])
+    with torch.no_grad(), patched(layers[1], everything, found[1].clone()):
+        restored = subject.model(**bad).logits[0, -1]
+    with torch.no_grad(), patched(layers[0], everything, found[0].clone()):
+        overwritten = subject.model(**bad).logits[0, -1]
+    assert torch.allclose(restored, target, atol=1e-5)
+    assert not torch.allclose(overwritten, target, atol=1e-5)
+
+
+def test_patching_tries_partners_until_one_fits(monkeypatch: pytest.MonkeyPatch) -> None:
+    from swce.diagnostics import patching
+
+    answers = pd.DataFrame(
+        {
+            "id": ["1", "2", "3"],
+            "group": ["a", "b", "c"],
+            "object": ["dog"] * 3,
+            "label": ["no"] * 3,
+            "margin": [1.0, -1.0, -2.0],
+        }
+    )
+
+    class Item:
+        def __init__(self, identifier: str) -> None:
+            self.id = identifier
+
+    class Bound:
+        def __init__(self, *_: object) -> None:
+            pass
+
+        def items(self) -> list[Item]:
+            return [Item(identifier) for identifier in ("1", "2", "3")]
+
+    calls: list[str] = []
+
+    def fake(subject: object, task: object, wrong: Item, right: Item) -> list[dict[str, object]]:
+        calls.append(right.id)
+        return [{"wrong": wrong.id, "right": right.id}] if len(calls) == 2 else []
+
+    monkeypatch.setattr(patching, "Task", Bound)
+    monkeypatch.setattr(patching, "patch_pair", fake)
+    frame = patching.patching_task(object(), "pope-tiny", answers, pairs=1)  # type: ignore[arg-type]
+    assert len(calls) == 2
+    assert frame["tried"].tolist() == [2]
