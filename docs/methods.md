@@ -192,7 +192,8 @@ images. Its scores are in `results/leaderboard.csv`.
 - REVIS at block 30, the `table-11` setting, lowers CHAIR_S to 32.0 and raises MME by 43, and
   lowers the F1 to 0.787 on POPE adversarial and to 0.770 on RePOPE. It ran later on the same
   kind of card, after a calibration that gave block 31 the same threshold to the last digit.
-- Qwen3-VL and LLaVA-OneVision-1.5 have not been run.
+- LLaVA-OneVision-1.5-8B ran the same experiment at the `code-default` settings, below.
+- Qwen3-VL has not been run.
 
 ### Why REVIS behaves so on LLaVA-1.5-7B
 
@@ -322,6 +323,46 @@ blocks and their controls. The probes were cross-validated over images with five
   probe falls to 0.65 at block 30 under REVIS and to 0.67 under the control, while a probe fitted
   under either still reaches 0.90. At block 31, REVIS changes nothing at the last prompt token,
   as its gate stays shut there.
+
+### LLaVA-OneVision-1.5-8B
+
+The main experiment ran on `llava-onevision-1.5-8b` with VTI and REVIS at their `code-default`
+settings and their controls, since neither paper publishes a setting for this model. Its scores
+are in `results/leaderboard.csv`.
+
+- Environment: one NVIDIA RTX 4090, PyTorch 2.14.1+cu126 and torchvision 0.29.1+cu126, seed
+  zero. The driver of that machine, version 550, cannot run the build for CUDA 13.0 that the lock
+  file pins, which is the one departure from the locked environment. Every `setting.json` of the
+  run records it.
+- The unmodified model reaches an F1 of 0.866 on POPE adversarial, answering yes to 46.2% of the
+  questions, with an AUROC of 0.942 and a d' of 2.29. It reaches 0.914 on RePOPE, a CHAIR_S of
+  33.4 with descriptions of 169 words, and an MME of 2280.
+- **No method changes POPE.** No F1 moves by more than 0.006 on either label set, and no change
+  is significant after the Holm correction, p of 0.27 or more. The AUROC stays between 0.940 and
+  0.942 under every condition. VTI lowers d' from 2.29 to 2.20, by 0.09 [0.04, 0.16], and raises
+  the yes ratio by 0.026, so it moves the threshold toward yes and separates the answers slightly
+  less.
+- **REVIS lowers CHAIR_S by shortening the descriptions.** It reaches 25.6, a change of -7.8
+  [-12.2, -3.4] points with a Holm p of 0.012, with descriptions of 118 words against 169. Cut to
+  the same recall, the unmodified descriptions reach 27.5, so only 1.9 points of the change are
+  beyond that shortcut. Its MME changes by -15 [-39, +3].
+- **The REVIS control does not raise CHAIR_S significantly.** Its change is +5.0 [-0.2, +10.6]
+  points with a Holm p of 0.73, and its descriptions run to 381 words, more than twice the
+  unmodified length, which issue #20 checks for loops. The difference between REVIS and its
+  control rests on that control and is not reported as a gain until then.
+- **VTI does not help.** Its CHAIR_S is 34.4, within the interval of the unmodified model, with
+  descriptions of 304 words, and its MME falls by 51 [2, 100]. Its control changes CHAIR_S by +4.0
+  points, not significantly, at 195 words.
+- No method is non-inferior to the unmodified model on MME.
+- **The logit lens separates the questions whose answer is yes from those whose answer is no.**
+  On POPE adversarial its AUROC stays near 0.5 up to block 17, rises to 0.87 at block 18 and 0.93
+  at block 19, and stays near 0.94 to the output, under every method. It reads the expected answer
+  and not whether the answer of the model is right.
+- **REVIS changes the stream from block 21 on**, the block its calibration selected, and leaves
+  the blocks below it as they were. Why its gate opens there without moving any answer of POPE is
+  issue #19.
+
+Lengths are in words, as `results/leaderboard.csv` reports them.
 
 ### Sparse autoencoders on four blocks
 
