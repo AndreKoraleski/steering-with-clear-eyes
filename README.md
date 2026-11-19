@@ -236,6 +236,11 @@ the stream along the direction of the answer. `--probe` writes `diagnostics/MODE
 uv run swce-diagnose --probe --subject swce.models:llava_15 methods/vti.py:build methods/vti.py:control methods/revis.py:build methods/revis.py:control --task pope-adversarial --limit 0
 ```
 
+`swce-sae` trains sparse autoencoders on chosen blocks of LLaVA-1.5 and reads the methods
+through them, after four checks fixed before training: reconstruction by token type,
+reconstruction under steering, replication across seeds, and a confirmation of every reading
+that does not use the autoencoder. See section 6 of `docs/runbook.md`.
+
 ## Running on several machines
 
 An evaluation has three stages, which run together by default and apart on request.
