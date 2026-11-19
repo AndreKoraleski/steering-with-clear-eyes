@@ -127,6 +127,26 @@ class HuggingFaceSubject(Subject):
         """
         return [block.get_submodule("mlp") for block in self._decoder]
 
+    def encoder_layers(self) -> Sequence[nn.Module]:
+        """Blocks of the vision encoder.
+
+        Returns:
+            The encoder blocks, whose outputs start with the hidden state of every image token.
+        """
+        return list(self._encoder)
+
+    def projector(self) -> nn.Module | None:
+        """Module mapping the features of the vision encoder into the language model, if named.
+
+        Returns:
+            The first module named like a multimodal projector or a merger, or None.
+        """
+        for name, module in self.model.named_modules():
+            if name.endswith(("multi_modal_projector", "visual.merger")):
+                found: nn.Module = module
+                return found
+        return None
+
     def encoder_mlps(self) -> Sequence[nn.Module]:
         """Feed forward module of every vision encoder block.
 
