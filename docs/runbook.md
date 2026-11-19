@@ -155,6 +155,32 @@ uv run swce-diagnose --subject swce.models:llava_15 --prior --encoder --knockout
 They read the COCO 2014 annotations, about 250 MB, and the encoder probe fetches 5000 COCO
 train2014 images. The readings land under `diagnostics/MODEL` in the results folder.
 
+Two more readings take the same command. `--patching` copies the states of a correct no into a
+wrong yes to the same question, block by block, for the image tokens, the object word and the
+answer position, on 200 pairs (`--pairs`). `--attention` measures the norm-weighted attention
+of the answer on the image, the object asked about and the other objects, and how much of every
+object the centre crop of the processor keeps.
+
+```bash
+uv run swce-diagnose --subject swce.models:llava_15 --patching --attention --task pope-adversarial --limit 0
+```
+
+`--items` needs no model. It reads the answers saved under `per_item` item by item: the absent
+objects the model says yes to, the questions every method fixes and breaks, what RePOPE
+relabels, the object subtasks of MME and how often a method changes the first answer token.
+
+```bash
+uv run swce-diagnose --items --results results/main
+```
+
+The POPE tasks asked with "Please answer yes or no." appended, as the REVIS and V-ITI scripts
+ask them, are registered apart as `pope-adversarial-yn` and `repope-adversarial-yn`, a
+sensitivity analysis next to the questions as written.
+
+```bash
+uv run swce-evaluate --subject swce.models:llava_15 swce.baselines:Unmodified methods/vti.py:build methods/vti.py:control methods/revis.py:build methods/revis.py:control --tasks pope-adversarial-yn repope-adversarial-yn --lens --results results/main
+```
+
 ## 7. Sparse autoencoders
 
 Optional, and on LLaVA-1.5 only. It trains a TopK autoencoder of 32768 latents on the

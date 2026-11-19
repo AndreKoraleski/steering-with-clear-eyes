@@ -47,6 +47,7 @@ Key `pope`. Li et al., Evaluating Object Hallucination in Large Vision-Language 
 | `pope-random` | yes_no | `f1` | Object presence questions on 500 COCO val2014 images, with absent objects drawn at random. |
 | `pope-popular` | yes_no | `f1` | Object presence questions on 500 COCO val2014 images, with absent objects drawn among the most frequent ones. |
 | `pope-adversarial` | yes_no | `f1` | Object presence questions on 500 COCO val2014 images, with absent objects that co-occur most with the present ones. |
+| `pope-adversarial-yn` | yes_no | `f1` | Object presence questions on 500 COCO val2014 images, with absent objects that co-occur most with the present ones. Every question ends with "Please answer yes or no.", as the REVIS and V-ITI scripts ask it. |
 
 ## RePOPE
 
@@ -68,6 +69,7 @@ Key `repope`. Neuhaus and Hein, RePOPE: Impact of Annotation Errors on the POPE 
 | `repope-random` | yes_no | `f1` | The POPE random questions with corrected labels, which reuse the answers given to POPE. |
 | `repope-popular` | yes_no | `f1` | The POPE popular questions with corrected labels, which reuse the answers given to POPE. |
 | `repope-adversarial` | yes_no | `f1` | The POPE adversarial questions with corrected labels, which reuse the answers given to POPE. |
+| `repope-adversarial-yn` | yes_no | `f1` | The POPE adversarial questions with corrected labels, which reuse the answers given to POPE. Every question ends with "Please answer yes or no.", as the REVIS and V-ITI scripts ask it. |
 
 ## CHAIR
 

@@ -8,7 +8,7 @@ from PIL import Image
 from support import tiny_registry
 
 from swce.registry import load_registry
-from swce.tasks.loaders import MME_SUBTASKS, chair, mme
+from swce.tasks.loaders import MME_SUBTASKS, chair, mme, pope
 from swce.tasks.task import Task, describe
 
 
@@ -88,3 +88,24 @@ def test_describe_names_the_budget_and_files() -> None:
     line = describe(load_registry().task("chair")[1])
     assert "512 new tokens" in line
     assert "annotations_trainval2014.zip" in line
+
+
+def test_a_variant_appends_its_instruction_to_every_question(tmp_path: Path) -> None:
+    questions = tmp_path / "questions.json"
+    row = {
+        "question_id": 1,
+        "image": "a.jpg",
+        "text": "Is there a dog in the image?",
+        "label": "yes",
+    }
+    questions.write_text(json.dumps(row) + "\n", encoding="utf-8")
+    (plain,) = pope([questions], [], {})
+    (variant,) = pope([questions], [], {"suffix": "Please answer yes or no."})
+    assert plain.prompt == "Is there a dog in the image?"
+    assert variant.prompt == "Is there a dog in the image? Please answer yes or no."
+
+
+def test_the_registry_holds_the_yes_or_no_variants() -> None:
+    registry = load_registry()
+    for key in ("pope-adversarial-yn", "repope-adversarial-yn"):
+        assert key in registry.task_keys()

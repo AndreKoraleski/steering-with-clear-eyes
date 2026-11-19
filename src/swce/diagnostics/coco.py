@@ -17,8 +17,8 @@ from pathlib import Path
 from swce.data.download import fetch
 from swce.registry import load_registry
 
-QUESTION = re.compile(r"^Is there an? (?P<object>.+?) in the image\?$")
-"""Form of every POPE question."""
+QUESTION = re.compile(r"^Is there an? (?P<object>.+?) in the image\?")
+"""Form of every POPE question, followed by any instruction a variant appends."""
 
 
 def object_of(question: str) -> str:
@@ -98,3 +98,31 @@ class Cooccurrence:
 def cooccurrence(objects: Mapping[str, frozenset[str]]) -> Cooccurrence:
     """Co-occurrence of the categories over the images of a mapping."""
     return Cooccurrence(objects.values())
+
+
+def image_boxes(
+    split: str, archive: Path | None = None
+) -> dict[str, tuple[int, int, list[tuple[str, list[float]]]]]:
+    """Size and boxes of the instances of every image of a split, by file name.
+
+    Args:
+        split: `train` or `val`.
+        archive: Archive of the annotations, or None for the pinned one.
+
+    Returns:
+        For every image, its width, its height and the category and box of each instance, as
+        `[x, y, width, height]` in pixels.
+    """
+    path = archive or annotations_path()
+    with zipfile.ZipFile(path) as opened:
+        data = json.loads(opened.read(f"annotations/instances_{split}2014.json"))
+    names = {category["id"]: category["name"] for category in data["categories"]}
+    found: dict[int, tuple[str, int, int, list[tuple[str, list[float]]]]] = {
+        image["id"]: (image["file_name"], image["width"], image["height"], [])
+        for image in data["images"]
+    }
+    for annotation in data["annotations"]:
+        found[annotation["image_id"]][3].append(
+            (names[annotation["category_id"]], list(annotation["bbox"]))
+        )
+    return {name: (width, height, boxes) for name, width, height, boxes in found.values()}

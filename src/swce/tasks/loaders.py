@@ -1,7 +1,10 @@
 """Loaders turning the pinned files of a benchmark into items.
 
 Every loader reads the files exactly as their authors publish them. Prompts are the questions as
-written, without any suffix, and item order is the order of the files.
+written, without any suffix, and item order is the order of the files. The one exception is a
+task registered as a variant, such as `pope-adversarial-yn`, whose options name the instruction
+it appends to every question. A variant has a key and a fingerprint of its own, so its rows never
+mix with those of the benchmark as written.
 """
 
 import json
@@ -52,16 +55,18 @@ def pope(files: Sequence[Path], paths: Sequence[str], options: Mapping[str, str]
     Args:
         files: The question file, alone.
         paths: Registry paths of the files, unused.
-        options: Task options, unused.
+        options: Task options, whose `suffix`, when given, is appended to every question after a
+            space.
 
     Returns:
         One item per question, in file order.
     """
+    suffix = f" {options['suffix']}" if options.get("suffix") else ""
     return [
         Item(
             id=str(row["question_id"]),
             group=str(row["image"]),
-            prompt=str(row["text"]),
+            prompt=str(row["text"]) + suffix,
             image=str(row["image"]),
             host=COCO,
             label=str(row["label"]).lower(),

@@ -103,6 +103,24 @@
           "requires": [
             "coco-2014"
           ]
+        },
+        {
+          "key": "pope-adversarial-yn",
+          "kind": "yes_no",
+          "description": "Object presence questions on 500 COCO val2014 images, with absent objects that co-occur most with the present ones. Every question ends with \"Please answer yes or no.\", as the REVIS and V-ITI scripts ask it.",
+          "loader": "pope",
+          "scorer": "pope",
+          "primary": "f1",
+          "max_new_tokens": 64,
+          "files": [
+            "pope/coco_pope_adversarial.json"
+          ],
+          "requires": [
+            "coco-2014"
+          ],
+          "options": {
+            "suffix": "Please answer yes or no."
+          }
         }
       ]
     },
@@ -179,6 +197,24 @@
           "requires": [
             "coco-2014"
           ]
+        },
+        {
+          "key": "repope-adversarial-yn",
+          "kind": "yes_no",
+          "description": "The POPE adversarial questions with corrected labels, which reuse the answers given to POPE. Every question ends with \"Please answer yes or no.\", as the REVIS and V-ITI scripts ask it.",
+          "loader": "pope",
+          "scorer": "pope",
+          "primary": "f1",
+          "max_new_tokens": 64,
+          "files": [
+            "repope/coco_repope_adversarial.json"
+          ],
+          "requires": [
+            "coco-2014"
+          ],
+          "options": {
+            "suffix": "Please answer yes or no."
+          }
         }
       ]
     },
