@@ -495,6 +495,21 @@ the COCO boxes mapped onto the grid of image tokens.
 - The first token takes 10% to 40% of the weighted attention at most layers, the sink of LLaVA,
   whatever the answer.
 
+**On models whose images vary in size.** Qwen3-VL and LLaVA-OneVision-1.5 resize every image to
+a whole number of patches, keeping its aspect, so images give different numbers of tokens.
+
+- **Patching** pairs a wrong yes with the first correct no to the same question whose sequence
+  has the same length, trying up to 20 partners, and records how many it tried. COCO images
+  mostly share a few sizes, so most wrong yeses find one.
+- **Attention** maps boxes through the `image_grid_thw` the processor returns, the size of the
+  resized image in patches, each token of the language model covering a square of merged
+  patches. Nothing is cropped, so every object is visible.
+- **DeepStack.** Qwen3-VL adds features of its vision encoder to the image tokens again after
+  each of its first three decoder blocks. A patch of the image tokens at those blocks is partly
+  overwritten by the hallucinating image, so those rows are marked `reinjected`, and readings
+  that hook the blocks miss that addition at the image positions there. The position of the
+  answer and the question are never injected into.
+
 The crop is a difference from the official LLaVA-1.5, which pads, and it applies to every run of
 this model here. It lowers the recall of POPE by hiding a few percent of the present objects, and
 it hides the same objects under every method, so it does not bias the comparison of methods.
