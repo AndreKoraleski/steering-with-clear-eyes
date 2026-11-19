@@ -152,7 +152,8 @@ uv run swce-sae evaluate --subject swce.models:llava_15 methods/vti.py:build met
 ```
 
 The autoencoders land under `artifacts/sae` in the data root and the checks under
-`results/sae`. `--limit`, `--own`, `--latents`, `--items` and `--held` shrink every step for a
+`results/sae`. Training writes a checkpoint there every twenty minutes, about 6.4 GB per block
+with its optimizer, and the same command run again after a stop continues from it. `--limit`, `--own`, `--latents`, `--items` and `--held` shrink every step for a
 rehearsal.
 
 ## What to check first
