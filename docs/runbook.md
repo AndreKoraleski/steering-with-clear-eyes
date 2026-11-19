@@ -106,7 +106,8 @@ change to `results/analysis.csv`, the comparison with the shortcuts of the unmod
 `results/shortcuts.csv` and the summary of the logit lens to `results/lens.csv`.
 
 Scoring CHAIR needs the COCO annotations, which are fetched into the data root, and the NLTK
-resources `punkt_tab`, `averaged_perceptron_tagger_eng` and `wordnet`.
+resources `punkt_tab`, `averaged_perceptron_tagger_eng` and `wordnet`, which are downloaded on
+first use when missing.
 
 ## 4. Residual shift
 
@@ -123,6 +124,36 @@ After copying the `diagnostics` folders of several jobs into one results folder,
 ```bash
 uv run swce-diagnose --summarize-only
 ```
+
+## 5. Linear probes
+
+Optional as well. It reads the residual stream of every POPE question under every method, once,
+and fits a probe of the expected answer on every block, with five folds over images. On the
+whole task it reads 3000 questions per method setting, about a forward pass each, and holds
+their states in memory, about 1.6 GB per setting for LLaVA-1.5. The probes of every block are
+fitted together on the GPU, which takes minutes, and on the processor when there is no GPU,
+which takes hours.
+
+```bash
+uv run swce-diagnose --probe --subject swce.models:llava_15 methods/vti.py:build methods/vti.py:control methods/revis.py:build methods/revis.py:control --task pope-adversarial --limit 0
+```
+
+## 6. Sparse autoencoders
+
+Optional, and on LLaVA-1.5 only. It trains a TopK autoencoder of 32768 latents on the
+residual stream of blocks 9, 13, 24 and 30, two seeds each, on COCO train2014 images, and then
+checks them and reads VTI and the hallucinated answers of POPE through them. Training keeps the
+model, the autoencoders and their optimizer on one GPU, about 60 GB for the eight of them; on a
+smaller card, train one block at a time with `--blocks`.
+
+```bash
+uv run swce-sae train --subject swce.models:llava_15
+uv run swce-sae evaluate --subject swce.models:llava_15 methods/vti.py:build methods/revis.py:build
+```
+
+The autoencoders land under `artifacts/sae` in the data root and the checks under
+`results/sae`. `--limit`, `--own`, `--latents`, `--items` and `--held` shrink every step for a
+rehearsal.
 
 ## What to check first
 

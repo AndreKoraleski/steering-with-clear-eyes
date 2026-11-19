@@ -120,15 +120,20 @@ Official code at commit `75f4d29`. Two steps, `compute_vectors` and `calibrate`.
 
 | | `llava-1.5-7b` | `qwen3-vl-8b` | `llava-onevision-1.5-8b` |
 |---|---|---|---|
-| Setting | Published. Strength 1.1 | `code-default`. Strength 2.5 | `code-default`. Strength 2.5 |
+| Setting | Published. Strength 1.1 at the calibrated block, and at block 30 as `table-11` | `code-default`. Strength 2.5 | `code-default`. Strength 2.5 |
 | Vectors | Released by the authors, downloaded | Computed on the 100 official pairs | Computed on the 100 official pairs |
 | Prompts of the vectors | Not needed | The construction the official code holds for Qwen3 | The construction the official code uses for any other model |
-| Layer and threshold | Calibrated | Calibrated | Calibrated |
+| Layer and threshold | Calibrated, or block 30 with its calibrated threshold | Calibrated | Calibrated |
 
 - The paper names layer 31 in its Appendix C.3 and reports its main numbers at layer 30 in its
-  Table 11 for LLaVA-1.5, and gives no threshold for it. Both therefore come from the calibration
-  on every model, with the defaults of `layer_select.sh`, the 85th percentile over 300 questions
-  down to layer 10. The paper states 0.8 for the percentile and 100 images.
+  Table 11 for LLaVA-1.5, and gives no threshold for either. When a paper publishes two values
+  for one model, both are evaluated as settings of their own. The default setting takes its
+  layer from the calibration, which selects block 31, and `table-11` is fixed at block 30.
+- The threshold comes from the calibration on every model, with the defaults of
+  `layer_select.sh`, the 85th percentile over 300 questions down to layer 10. The paper states
+  0.8 for the percentile and 100 images. The calibration records the threshold of every block it
+  observes, as the official script computes it for each, so a setting fixed at a block reads the
+  threshold of that block.
 - The official script answers the calibration questions once per layer. They are answered once
   here and every layer is observed in the same pass, which gives the same risks.
 - The calibration answers greedily in at most five tokens, as the official script does, whatever
@@ -171,7 +176,152 @@ ports.
 
 ## What has been run
 
-Nothing on this page has been run on real weights yet.
+The main experiment ran on `llava-1.5-7b` with VTI, REVIS and their controls, on POPE
+adversarial, RePOPE, CHAIR and MME, whole, with the logit lens and the residual shift on fifty
+images. Its scores are in `results/leaderboard.csv`.
+
+- Environment: one NVIDIA A100-SXM4-80GB, Python 3.13.16, PyTorch 2.14.1+cu130, transformers
+  5.23.0, half precision, seed zero, the three jobs side by side on one card.
+- The unmodified model lands where other papers put it on CHAIR and MME, with a CHAIR_S of 50.2
+  and an MME of 1769. On POPE adversarial it reaches an F1 of 0.802 but answers yes to 61.7% of
+  the questions, more than in other papers, as the comparison below shows.
+- REVIS answers POPE and RePOPE exactly as the unmodified model does, raises CHAIR_S to 60.2 and
+  lowers MME by 302, with longer answers on MME. Its random control answers every task exactly as
+  the unmodified model does, since its gate never opens at the calibrated threshold. The causes
+  are below.
+- REVIS at block 30, the `table-11` setting, lowers CHAIR_S to 32.0 and raises MME by 43, and
+  lowers the F1 to 0.787 on POPE adversarial and to 0.770 on RePOPE. It ran later on the same
+  kind of card, after a calibration that gave block 31 the same threshold to the last digit.
+- Qwen3-VL and LLaVA-OneVision-1.5 have not been run.
+
+### Why REVIS behaves so on LLaVA-1.5-7B
+
+The port follows the official code at every step. The vectors are the ones the authors release,
+the calibration selects the layer and threshold as `layer_select.py` does, and the hook is the
+official one. The behaviour comes from what the recipe selects and from the protocol.
+
+- **The calibration selects the last block.** It searches downward from the top and stops at the
+  first block that separates false positives from correct answers. Block 31 already does, with a
+  threshold of 0.195. The paper names the same block in its Appendix C.3, although its own Table
+  11 reports that block as failing, with a CHAIR_S of 51.0, a CHAIR_I of 47.84 and an MM-Vet of
+  12.29 against 35.92 unsteered. Nothing comes after the
+  last block but the final normalization and the output head. Adding the vector there changes only
+  the next token at the positions where the gate opens. It reaches no later position, so it acts
+  as a bias on the logits.
+- **The vector of that block points against the vectors below it.** Block 31 reads the vector at
+  hidden state index 32, which the official code computes from the states after the final
+  normalization. Each vector is a principal component, and the sign of a principal component is
+  arbitrary. Every released visual vector has a positive cosine with the one of the index below,
+  above 0.9 from index 18 upward, except at indices 13, 25 and 32. There it is -0.85, -0.94 and
+  -0.75, so their sign is flipped. Index 31, which the paper uses at block 30 in its Table 11, is
+  on the other side of the last flip.
+- **The gate opens on MME and not at the first answer token of POPE.** The calibration measures
+  the risk at the last token of questions ending in "Please answer yes or no.", as the official
+  scripts ask them. MME questions end the same way, and on 1377 of its 2374 questions the gate
+  opens at that token. There it pushes the answer to "no", correcting 111 wrong yeses and breaking
+  365 right ones. POPE asks its questions unchanged here, without that sentence. On none of the
+  3000 questions does the probability of the first answer token change, so no answer of POPE or
+  RePOPE changes.
+- **The gate also opens on later tokens and keeps the model talking.** The official scripts stop
+  POPE and MME answers at ten tokens. Here every model generates with its shipped settings. Steered
+  answers average 40 tokens on POPE against 23 unsteered, and 47 on MME against 3. CHAIR
+  descriptions grow from 107 to 134 tokens and diverge after about 30 characters. The longer
+  descriptions name more objects that are not in the image, which raises CHAIR_S.
+- **The gate of the control cannot open.** For a random vector, the cosine with any state has a
+  standard deviation of 1 over the square root of 4096, which is 0.016. The threshold of 0.195 is
+  more than twelve deviations away, so the control never adds its vector.
+
+### REVIS at block 30
+
+- **The gate is open almost everywhere.** The calibration gives block 30 a threshold of -0.093,
+  so the gate opens wherever the cosine between the state and the vector is below 0.093. It opens
+  at the first answer token of every POPE question, for the method and for its control alike, so
+  at this block REVIS adds its vector nearly without condition.
+- **The method changes answers while keeping the text fluent.** It flips 218 of the 3000 POPE
+  answers and loses F1 on both label sets. Its descriptions keep their usual length, 109 tokens
+  against 107, and name fewer objects that are not in the image. Fourteen of them run to the
+  token limit in a loop of repeated words.
+- **The control breaks the text, which flatters its CHAIR.** The random vector of the norm of the
+  visual vector reaches a CHAIR_S of 25.4, below the method, but 181 of its 500 descriptions run to
+  the token limit and end in a loop of repeated characters or words. A description that names no
+  object hallucinates none, so its CHAIR is not comparable with that of the method. On POPE it
+  flips 141 answers and on MME it scores as the unmodified model does.
+
+### Comparison with published results
+
+The protocols differ from paper to paper, so the comparison is of direction and size, not of the
+last digit. The REVIS paper evaluates CHAIR on 100 images, against 500 here.
+
+| | Here | VTI paper | REVIS paper | Others |
+|---|---|---|---|---|
+| Unmodified CHAIR_S and CHAIR_I | 50.2 and 14.1 | 51.0 and 15.2 | 54.0 and 15.78 | 50.0 and 15.4 (V-ITI), 48.6 and 13.6 (RUDDER) |
+| Unmodified MME | 1769 | Not reported | 1754 | 1865 (V-ITI), 1746 (RUDDER) |
+| Unmodified POPE adversarial, accuracy and F1 | 77.9 and 80.2 | 76.03 and 76.45 | 83.20 and 82.32 | 76.03 and 76.26 (V-ITI) |
+| VTI CHAIR_S and CHAIR_I | 36.6 and 11.1 | 35.8 and 11.1 | 35.0 and 15.58 | |
+| VTI POPE adversarial F1 | 80.7, +0.5 | 82.11, +5.7 | 80.91, -1.4 | |
+| VTI MME | 1553 at the POPE setting, -133 | Not reported | 1507, -247 | |
+| REVIS block 31 CHAIR_S | 60.2 | | 51.0 | |
+| REVIS block 30 CHAIR_S | 32.0 | | 30.0 | |
+| REVIS block 30 MME | 1812, +43 | | 1787, +33 | |
+| REVIS block 30 POPE adversarial F1 | 78.7, -1.5 | | 83.51, +1.2 | |
+
+The V-ITI paper is arXiv 2512.03542 and the RUDDER paper arXiv 2511.10292. Neither evaluates VTI
+or REVIS.
+
+- **CHAIR and MME agree.** The unmodified model, VTI on CHAIR, both blocks of REVIS on CHAIR and
+  the change REVIS makes to MME at block 30 all land within the spread of the published values.
+- **The unmodified model answers yes more often on POPE.** Here it says yes to 61.7% of the
+  adversarial questions, with a recall of 89.6 and a precision of 72.7, where the REVIS paper
+  reports a recall of 78.2 for the same model and split. The REVIS and V-ITI papers append
+  "Please answer yes or no." to every question, and the questions are asked unchanged here, which
+  is a likely cause. The VTI paper also asks them unchanged, so the cause is not established.
+- **This bias decides the sign of a POPE change.** REVIS at block 30 pushes answers to yes in both
+  evaluations, raising the yes ratio here from 0.617 to 0.689. A model that says no too often
+  gains from that, as in the REVIS paper, and one that says yes too often loses, as here. The
+  comparison with the shortcuts of the unmodified model finds no gain beyond the shift of the
+  threshold, so the gain the paper reports is likely a shift of the threshold as well. A POPE
+  result is only comparable across protocols through its threshold-free metrics, the AUROC and
+  d', which `results/leaderboard.csv` reports.
+- **VTI on POPE matches the independent evaluation and not its own paper.** The VTI paper
+  reports a gain of 5.7 F1 points against a baseline its paper decodes with beam search. The REVIS
+  paper finds a loss of 1.4, and here the gain of 0.5 is that of the random control.
+- **VTI shortens descriptions more here than in its paper.** Its paper reports the recall rising
+  from 75.2 to 76.8 with descriptions 8% shorter. Here the recall falls from 80.8 to 75.9 and the
+  descriptions shorten by 22%, which is why most of the gain on CHAIR is matched by truncating
+  the unmodified descriptions. The cause of the difference is not known, and the finding holds
+  for this protocol.
+
+### Linear probes on POPE adversarial
+
+`swce-diagnose --probe` fitted a probe of the expected answer on every block, on the 3000
+questions of POPE adversarial, under the unmodified model, VTI at its POPE setting, REVIS at both
+blocks and their controls. The probes were cross-validated over images with five folds.
+
+| Block | 0 | 4 | 6 | 8 | 10 | 11 | 13 | 16 | 24 | 31 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Probe of the unmodified model, AUROC | 0.639 | 0.675 | 0.749 | 0.853 | 0.898 | 0.905 | 0.908 | 0.906 | 0.905 | 0.905 |
+| Logit lens of the unmodified model, AUROC | 0.521 | 0.478 | 0.488 | 0.444 | 0.497 | 0.600 | 0.886 | 0.910 | 0.906 | 0.907 |
+
+- **The answer is readable four blocks before the logit lens shows it.** The probe reaches 0.85
+  at block 8 and 0.90 at block 10, where the lens is still at chance. Blocks 6 to 11 are where
+  the stream comes to hold the answer, and the lens only reads it once the head can, from block
+  12.
+- **Nothing is lost after block 11.** The probe stays at 0.90 to 0.91 from block 11 to the
+  output, the same as the final answer of the model reaches. The errors of the unmodified model
+  on POPE are not information that a later block discards.
+- **No method adds what the stream holds about the answer.** A probe fitted under REVIS, at
+  either block, or under its control, matches the unmodified probe to the third decimal. Under
+  VTI it is lower between blocks 8 and 14, 0.832 against 0.853 at block 8 and 0.888 against 0.905
+  at block 11, and the same from block 16 on.
+- **VTI moves the early stream far from where the unmodified probe reads it.** The probe of the
+  unmodified model, applied under VTI, falls to 0.51 to 0.53 between blocks 4 and 8, and its
+  score moves by up to nine standard deviations, with a sign that changes from block to block.
+  Its random control does the same, less, falling to 0.52 to 0.60. A probe fitted under VTI still
+  finds the answer there, so VTI displaces the early stream rather than erasing what it holds.
+- **REVIS at block 30 displaces the stream just as its random control does.** The unmodified
+  probe falls to 0.65 at block 30 under REVIS and to 0.67 under the control, while a probe fitted
+  under either still reaches 0.90. At block 31, REVIS changes nothing at the last prompt token,
+  as its gate stays shut there.
 
 The interventions, the fitting of the VTI directions, the principal direction of REVIS, its
 selection of a layer and the states VISTA reads are tested against the official code.

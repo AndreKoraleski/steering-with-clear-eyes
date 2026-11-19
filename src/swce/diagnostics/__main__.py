@@ -4,8 +4,9 @@
 residual shift to every method and to the unmodified model, block by block. The readings of
 every item are written under `diagnostics` in the results directory, one file per method
 setting, so that jobs on several machines can be copied into one folder. `--summarize-only`
-needs no model and summarizes every reading found there. No answer is generated and nothing is
-scored.
+needs no model and summarizes every reading found there. `--probe` fits linear probes of the
+expected answer on every block instead, cross-validated over images, and writes them to
+`diagnostics/MODEL/probe-TASK.csv`. No answer is generated and nothing is scored.
 """
 
 import argparse
@@ -14,6 +15,7 @@ import sys
 from pathlib import Path
 
 from swce.data.paths import DATA_ENV
+from swce.diagnostics.probe import FOLDS, probe_task, write_probes
 from swce.diagnostics.run import diagnose, summarize, summarize_results, write_readings
 from swce.evaluation.__main__ import load_factory, load_steerers
 from swce.logging import configure_logging
@@ -35,6 +37,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--summarize-only", action="store_true", help="summarize the readings already written"
     )
+    parser.add_argument(
+        "--probe", action="store_true", help="fit linear probes instead of the lens and shift"
+    )
+    parser.add_argument("--folds", type=int, default=FOLDS, help="folds of the probes over images")
     parser.add_argument("--task", default="pope-adversarial", help="key of the task to read")
     parser.add_argument("--limit", type=int, default=50, help="images to read, 0 for all")
     parser.add_argument("--results", type=Path, default=Path("results"), help="results directory")
@@ -53,6 +59,19 @@ def main(argv: list[str] | None = None) -> int:
     if not isinstance(subject, Subject):
         raise TypeError(f"{args.subject} built {type(subject).__name__}, not a Subject")
     steerers = load_steerers(args.methods)
+    if args.probe:
+        probes = probe_task(
+            subject,
+            steerers,
+            args.task,
+            limit=args.limit or None,
+            folds=args.folds,
+            data=args.data,
+        )
+        for path in write_probes(probes, args.results):
+            print(path)
+        print(probes.to_string(index=False, float_format=lambda value: f"{value:.3f}"))
+        return 0
     readings = diagnose(subject, steerers, args.task, limit=args.limit or None, data=args.data)
     write_readings(readings, args.results, args.task)
     for path in summarize_results(args.results):

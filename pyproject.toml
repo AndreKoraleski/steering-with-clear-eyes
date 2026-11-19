@@ -33,6 +33,7 @@ swce-data = "swce.data.__main__:main"
 swce-diagnose = "swce.diagnostics.__main__:main"
 swce-evaluate = "swce.evaluation.__main__:main"
 swce-registry = "swce.registry.__main__:main"
+swce-sae = "swce.sae.__main__:main"
 
 [tool.uv.sources]
 torch = [{ index = "pytorch-cu130", marker = "sys_platform == 'win32' or sys_platform == 'linux'" }]

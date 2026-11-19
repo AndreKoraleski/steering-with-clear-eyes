@@ -258,9 +258,10 @@ def test_revis_leaves_its_layer_and_threshold_to_the_calibration(
 ) -> None:
     monkeypatch.setenv("SWCE_DATA", str(tmp_path))
     (tmp_path / "artifacts").mkdir()
-    published, default = revis.build()
+    published, table, default = revis.build()
     assert (published.strength, published.layer, published.tau) == (1.1, None, None)
-    assert published.published_for == ("llava-1.5-7b",)
+    assert published.published_for == table.published_for == ("llava-1.5-7b",)
+    assert (table.setting, table.strength, table.layer, table.tau) == ("table-11", 1.1, 30, None)
     assert (default.setting, default.strength, default.fallback) == ("code-default", 2.5, True)
     subject = ToySubject()
     vectors = {index: {"visual": torch.full((8,), float(index))} for index in range(4)}
@@ -273,6 +274,15 @@ def test_revis_leaves_its_layer_and_threshold_to_the_calibration(
     with default.attach(subject):
         assert torch.allclose(subject.states("prompt")[1], before + 2.5 * 2.0)
     default.prepare(subject)
+    fixed = default.model_copy(update={"layer": 2})
+    with pytest.raises(FileNotFoundError, match="holds no threshold for block 2"):
+        fixed.attach(subject)
+    outcome = json.dumps({"layer": 1, "tau": -2.0, "taus": {"1": -2.0, "2": -3.0}})
+    revis.calibration_path("toy").write_text(outcome, encoding="utf-8")
+    fixed.prepare(subject)
+    before = subject.states("prompt")[2]
+    with fixed.attach(subject):
+        assert torch.allclose(subject.states("prompt")[2], before + 2.5 * 3.0)
     with pytest.raises(FileNotFoundError, match="compute the vectors"):
         revis.load_vectors("qwen3-vl-8b")
 
@@ -288,8 +298,9 @@ def test_revis_control_passes_a_random_vector_of_the_same_norm_through_the_gate(
     torch.save(vectors, revis.vectors_path("toy"))
     outcome = json.dumps({"layer": 1, "tau": -2.0})
     revis.calibration_path("toy").write_text(outcome, encoding="utf-8")
-    published, control = revis.control()
+    published, table, control = revis.control()
     assert (published.name, published.strength, control.strength) == ("revis-random", 1.1, 2.5)
+    assert (table.setting, table.layer) == ("table-11", 30)
     assert control.fallback
     assert control.fitted_on == ()
     with pytest.raises(FileNotFoundError, match="prepare revis-random"):
@@ -344,6 +355,8 @@ def test_revis_selects_the_deepest_layer_that_separates_false_positives() -> Non
     assert revis.select(risks, categories, percentile=50.0, min_layer=10) == (11, 0.2)
     assert revis.select(risks, categories, percentile=100.0, min_layer=10) == (11, 0.3)
     assert revis.select(risks, categories, percentile=50.0, min_layer=12) is None
+    assert revis.thresholds(risks, categories, percentile=50.0) == {12: 0.55, 11: 0.2, 10: 0.05}
+    assert revis.thresholds(risks, ["TP", "TN", "TN", "TP", "Other"], percentile=50.0) == {}
     assert (
         revis.select(risks, ["TP", "TN", "TN", "TP", "Other"], percentile=50.0, min_layer=0) is None
     )
@@ -386,7 +399,12 @@ def test_revis_calibration_observes_every_layer_in_one_pass(tmp_path: Path) -> N
             run()
     else:
         assert run() == pytest.approx(expected)
-        assert json.loads(output.read_text(encoding="utf-8"))["layer"] == expected[0]
+        written = json.loads(output.read_text(encoding="utf-8"))
+        assert written["layer"] == expected[0]
+        every = revis.thresholds(risks, categories, percentile=85.0)
+        # The two passes round differently in single precision.
+        expected_taus = {str(layer): tau for layer, tau in every.items()}
+        assert written["taus"] == pytest.approx(expected_taus, abs=1e-6)
     assert subject.listeners == []
 
 
