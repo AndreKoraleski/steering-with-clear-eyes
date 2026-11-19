@@ -138,7 +138,24 @@ which takes hours.
 uv run swce-diagnose --probe --subject swce.models:llava_15 methods/vti.py:build methods/vti.py:control methods/revis.py:build methods/revis.py:control --task pope-adversarial --limit 0
 ```
 
-## 6. Sparse autoencoders
+## 6. Where a wrong answer comes from
+
+Three readings of the unmodified model on POPE, which can run in one job. `--prior` asks every
+question with and without its image and sets the answers against how often each object
+co-occurs with the objects of its image in COCO train2014. `--encoder` fits a probe of every COCO
+category on the vision encoder and the projector, on COCO train2014 images, and scores every POPE
+question with the probe of its object. `--knockout` blocks the attention from the answer to the
+image, from the answer to the text and from the text to the image, in windows of nine layers, on
+200 wrong yeses and 200 correct answers. On one A100 the three take about an hour together.
+
+```bash
+uv run swce-diagnose --subject swce.models:llava_15 --prior --encoder --knockout --task pope-adversarial --limit 0
+```
+
+They read the COCO 2014 annotations, about 250 MB, and the encoder probe fetches 5000 COCO
+train2014 images. The readings land under `diagnostics/MODEL` in the results folder.
+
+## 7. Sparse autoencoders
 
 Optional, and on LLaVA-1.5 only. It trains a TopK autoencoder of 32768 latents on the
 residual stream of blocks 9, 13, 24 and 30, two seeds each, on COCO train2014 images, and then
