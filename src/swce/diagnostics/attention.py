@@ -80,7 +80,8 @@ class Grid:
             return 0.0
         inside_w = max(0.0, min(x + w, self.crop) - max(x, 0.0))
         inside_h = max(0.0, min(y + h, self.crop) - max(y, 0.0))
-        return inside_w * inside_h / (w * h)
+        # Clipped, since rounding can put a box that fits whole a hair above one.
+        return min(1.0, inside_w * inside_h / (w * h))
 
     def cells(self, width: int, height: int, box: Sequence[float]) -> list[int]:
         """Image tokens, in row-major order, whose patch overlaps a box."""

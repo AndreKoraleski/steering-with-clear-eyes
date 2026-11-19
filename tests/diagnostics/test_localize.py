@@ -232,6 +232,7 @@ def test_grid_places_boxes_on_the_centre_crop() -> None:
     assert grid.cells(672, 336, [168, 0, 14, 14]) == [0]
     assert grid.cells(672, 336, [168 + 14, 14, 28, 1]) == [25, 26]
     assert grid.visible(672, 336, [100, 0, 136, 10]) == pytest.approx(0.5)
+    assert grid.visible(640, 427, [0.3, 0.1, 639.4, 426.7]) <= 1.0
     padded = Grid(shortest=336, crop=336, patch=14, pad=True)
     assert padded.visible(672, 336, [0, 0, 100, 100]) == pytest.approx(1.0)
 

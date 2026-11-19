@@ -443,6 +443,87 @@ A knockout puts the stream where the model never goes on its own, so its changes
 the answer depends on, not how large each contribution is in a normal pass. Patching (#35) tests
 the same layers by copying states from a correct run instead.
 
+### Where a wrong yes is decided, and what the image crop hides
+
+Three more readings of the unmodified LLaVA-1.5-7B on POPE adversarial, with `swce-diagnose
+--patching --attention` on one A100, and `swce-diagnose --items` on the answers of the main
+experiment.
+
+**Activation patching.** Each of 200 wrong yeses was paired with a correct no to the same question
+on another image. The states of the correct run were copied into the wrong one at one block and
+one group of positions at a time, and the table gives the median share of the gap between the
+two margins that the copy closes, one meaning the wrong yes becomes the correct no.
+
+| Block | 0 | 6 | 8 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 20 | 28 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Image tokens | 1.00 | 0.93 | 0.75 | 0.53 | 0.25 | 0.13 | 0.11 | 0.01 | 0.01 | 0.01 | 0.00 | 0.00 |
+| Tokens of the object word | 0.00 | 0.07 | 0.35 | 0.32 | 0.54 | 0.44 | 0.13 | 0.11 | 0.08 | 0.01 | 0.00 | 0.00 |
+| Position of the answer | 0.00 | 0.00 | 0.00 | 0.02 | 0.04 | 0.11 | 0.35 | 0.41 | 0.58 | 0.90 | 0.95 | 1.00 |
+
+- **What decides the answer moves from the image to the object word to the answer.** Up to
+  block 10 the image tokens still carry it, and copying them is enough. Between blocks 8 and 12
+  it sits in the tokens of the object named by the question, which alone restore up to 54% of
+  the gap at block 11. From block 13 it is at the position of the answer, where copying one
+  state restores 90% of the gap by block 16 and all of it by block 28.
+- **A wrong yes is settled by block 16.** After that the answer position alone holds it, and no
+  other position matters.
+- **This agrees with the knockout and the probes.** The image reaches the question between
+  layers 5 and 18 and the answer reads the question between layers 8 and 20, and the probes read
+  the answer from block 8 to 11. Patching names the tokens that carry it at each step.
+- Copying image tokens swaps the whole image and not only the object, so the early rows say the
+  answer is still recomputed from the image there, not that the object alone decides it.
+
+**Norm-weighted attention.** The attention of the answer position on every token, weighted by the
+norm of what each head writes from it (Kobayashi et al., 2020) and summed over heads, was split
+into the image, the region of the object asked about and the regions of the other objects, with
+the COCO boxes mapped onto the grid of image tokens.
+
+- **The crop of the processor hides objects.** The processor of LLaVA-1.5 on the Hugging Face hub
+  resizes the shortest side to 336 pixels and crops the centre, where the original code pads the
+  image to a square. Of the 1351 present objects with a COCO box, 88 lie wholly outside the crop
+  and 131 keep less than half their box.
+- **Most misses are objects the model cannot see or that have no box.** The model answers no to
+  39% of the objects outside the crop and 10% of those under half visible, against 2% to 6% of
+  the visible ones. Of its 156 misses, 34 are objects outside the crop, 13 under half visible, and
+  64 are questions whose object has no COCO box of that category, whose label is doubtful. Only
+  45 misses are about objects with a box and at least half visible.
+- **A wrong yes looks at the image more, in the middle layers.** Between layers 14 and 21 the
+  answer position puts 19% of its weighted attention on the image for a wrong yes against 15%
+  for a correct no, which tells them apart with an AUROC of 0.89, and 11% against 8% on the
+  regions of the other objects (AUROC 0.64). A wrong yes reads more of the image, and more of the
+  objects that are there, which fits the role of co-occurrence above. The share is correlational.
+- The first token takes 10% to 40% of the weighted attention at most layers, the sink of LLaVA,
+  whatever the answer.
+
+The crop is a difference from the official LLaVA-1.5, which pads, and it applies to every run of
+this model here. It lowers the recall of POPE by hiding a few percent of the present objects, and
+it hides the same objects under every method, so it does not bias the comparison of methods.
+
+**The answers item by item.** From the answers saved by the main experiment.
+
+- **The objects most hallucinated are small things that fit many scenes.** Among absent objects
+  asked about 20 times or more, the unmodified model says yes to 77% of handbags, 69% of traffic
+  lights, 66% of bottles, 64% of backpacks, 62% of trucks and of tvs and 58% of cups, against 26%
+  of dining tables. The rate of an object rises with its co-occurrence with the objects of the
+  image, with a Spearman correlation of 0.30 across objects and 0.22 across questions.
+- **VTI moves answers toward no, and its control does half of it.** At its POPE setting VTI turns
+  120 wrong yeses into correct noes and breaks 45 correct noes, and turns 56 correct yeses into
+  misses while fixing 19. Its random control fixes 68 and breaks 11 on absent objects and breaks
+  28 present ones. REVIS at block 30 only moves the other way, breaking 158 correct noes and
+  fixing 60 misses, and its control does the same at 98 and 43.
+- **RePOPE removes 316 questions and relabels 172.** Of the 662 errors of the unmodified model,
+  88 are on relabelled questions. Removing the ambiguous questions alone raises the F1 from 0.802
+  to 0.811, and the new labels bring it to 0.805, so the corrected labels change the level more
+  than the ranking of methods.
+- **REVIS at block 31 never acts on the first answer token of POPE.** It changes the text of 81% of
+  the answers and the probability of the first token of none, so no yes or no changes. On MME,
+  whose questions end with "Please answer yes or no.", it moves the first token of 58% of the
+  questions and changes 20% of the answers. VTI moves the first token of 91% of the POPE answers.
+  A method that acts only after the first token cannot change the answer to a yes or no question.
+- **The capability VTI costs at its POPE setting is mostly counting.** Of its loss of 216 MME
+  points, 70 are on the count subtask, 23 on position and 10 on existence, while it gains 20 on
+  color. Its random control loses 22 on position and 10 on count.
+
 ### Sparse autoencoders on four blocks
 
 `swce-sae` trained TopK autoencoders of 32768 latents, with 64 kept per state, on blocks 9, 13,
