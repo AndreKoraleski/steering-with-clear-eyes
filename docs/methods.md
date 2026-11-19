@@ -364,6 +364,85 @@ are in `results/leaderboard.csv`.
 
 Lengths are in words, as `results/leaderboard.csv` reports them.
 
+### Where a wrong yes comes from
+
+Three readings of the unmodified LLaVA-1.5-7B on the 3000 questions of POPE adversarial, with
+`swce-diagnose --prior --encoder --knockout`, on one A100. A wrong yes is a question whose object
+is absent and whose first answer token favours yes. There are 507 of them among the 1500 absent
+objects, and the margin of the first token gives a yes ratio of 0.617, as the generated answers
+do.
+
+**The language prior.** Every question was asked again with the image span removed.
+
+| Reading | Value |
+|---|---|
+| Yes ratio with the image, and without it | 0.617, and 0.817 |
+| AUROC of the answer without the image, for the expected answer | 0.42 |
+| AUROC of the imageless margin for telling wrong yeses from correct noes | 0.71 |
+| AUROC of the co-occurrence of the object with those of the image, for the same | 0.63 |
+| Wrong yeses, and correct noes, whose imageless margin already favours yes | 96%, and 86% |
+| Spearman correlation of the imageless margin and the co-occurrence | 0.01 |
+
+- **The question alone pushes to yes.** Without the image the model says yes to 82% of the
+  questions, and it is worse than chance at the answer, since the adversarial split asks about
+  objects that fit the scene. The image is what brings the yes ratio down to 62%.
+- **The prior picks out the wrong yeses.** Among absent objects, the margin without the image
+  tells the wrong yeses from the correct noes with an AUROC of 0.71. The wrong yeses fall on
+  the objects the question alone already favours.
+- **The scene adds to it, apart.** How often the object co-occurs in COCO train2014 with the
+  objects of the image predicts the wrong yeses too, at 0.63, and does not correlate with the
+  prior. One depends on the object asked about, the other on what is in the image.
+
+**The vision encoder.** A probe of every COCO category was fitted on the mean of the image
+tokens after every block of CLIP and after the projector, on 5000 COCO train2014 images, and each
+POPE question was scored by the probe of its object on its own image.
+
+| Block of the encoder | 0 | 6 | 12 | 16 | 18 | 23 | Projector |
+|---|---|---|---|---|---|---|---|
+| AUROC over the POPE questions | 0.58 | 0.67 | 0.77 | 0.82 | 0.83 | 0.82 | 0.83 |
+
+- **The encoder holds most of the answer, and the language model at least as much.** The probes
+  reach 0.83 from block 16 of the encoder to the projector, where the probes of the residual
+  stream reach 0.90 by block 10 and the model answers at 0.91. The language model does not lose
+  what the encoder sees.
+- **The comparison is a lower bound on the encoder.** The probes read the mean over all image
+  tokens, which dilutes small objects, and were fitted on other images, while the probes of the
+  stream read the position of the answer to the question itself. Pooling over the patches of the
+  object, the second reading of issue #33, is needed before saying the encoder holds less.
+
+**Attention knockout.** The attention from one set of positions to another was blocked in
+windows of nine consecutive layers, on 200 wrong yeses and 200 correct answers. The change is in
+the margin of yes over no, in nats, and the flipped share is that of answers that change side.
+
+| Route blocked | Layers | Mean change, correct | Flipped, correct | Mean change, wrong yes | Flipped, wrong yes |
+|---|---|---|---|---|---|
+| Answer to the image | any window | -0.2 to +0.1 | 1% or less | -0.2 to +0.1 | 6% or less |
+| Text to the image | 5-13 to 10-18 | -1.0 to -1.8 | 12% to 54% | -0.6 to -1.8 | 5% to 52% |
+| Answer to the text | 8-16 to 12-20 | +1.8 to +2.1 | 41% | +1.8 to +2.0 | 0% |
+| Answer to the text | 0-8 and 1-9 | -1.0 to -1.2 | 4% | -1.2 to -1.3 | 41% |
+
+The text is the question and the template between the image and the answer.
+
+- **The image reaches the answer through the question, not directly.** Blocking the answer from
+  the image tokens changes almost nothing in any window. Blocking the question from the image
+  between layers 5 and 18 moves the margin toward no by up to 1.8 nats and flips up to half of the
+  answers. In the middle layers the image is written into the tokens of the question, and the
+  answer reads it there. This is the route found for LLaVA in work on cross-modal information
+  flow.
+- **The no comes from the middle layers.** Blocking the answer from the text between layers 8 and
+  20 moves every margin toward yes by about 2 nats and turns 41% of correct answers into yes. With
+  that route closed the model says yes by default, which agrees with the prior above.
+- **A wrong yes leans on an early reading of the question.** Blocking the answer from the text in
+  the first nine layers flips 41% of the wrong yeses to no, and only 4% of the correct answers.
+  The answer position reads the question early, before the image has reached it, and that early
+  reading is a push to yes on which the wrong yeses depend far more than the correct answers.
+- **The picture fits the probes.** The answer becomes readable in the stream between blocks 8 and
+  11, the layers where the image reaches the answer through the question.
+
+A knockout puts the stream where the model never goes on its own, so its changes say which routes
+the answer depends on, not how large each contribution is in a normal pass. Patching (#35) tests
+the same layers by copying states from a correct run instead.
+
 ### Sparse autoencoders on four blocks
 
 `swce-sae` trained TopK autoencoders of 32768 latents, with 64 kept per state, on blocks 9, 13,
