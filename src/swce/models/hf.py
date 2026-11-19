@@ -10,7 +10,9 @@ Module paths differ between architectures and changed across versions of the lib
 blocks of the decoder and of the vision encoder are found by name.
 """
 
-from collections.abc import Mapping, Sequence
+import inspect
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from typing import Any
 
 import torch
@@ -158,6 +160,25 @@ class HuggingFaceSubject(Subject):
         )
         return text
 
+    def accepts(self, key: str) -> bool:
+        """Whether the forward pass of the model takes an argument.
+
+        A processor of a recent version of the library can return inputs that model code written
+        for an earlier version does not take, such as the `mm_token_type_ids` of the Qwen2.5-VL
+        processor given to the code of LLaVA-OneVision-1.5. Such code computes what it needs from
+        the other inputs, as it did under the version it was written for.
+
+        Args:
+            key: Name of the argument.
+
+        Returns:
+            True when the forward pass names it or takes any keyword argument.
+        """
+        parameters = inspect.signature(self.model.forward).parameters
+        return key in parameters or any(
+            parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters.values()
+        )
+
     def moved(self, encoded: Any) -> dict[str, Tensor]:
         """Tensors of a processor output on the device and in the type of the model.
 
@@ -165,12 +186,12 @@ class HuggingFaceSubject(Subject):
             encoded: Output of the processor or of its tokenizer.
 
         Returns:
-            Its tensors, moved.
+            Its tensors, moved, without those the forward pass of the model does not take.
         """
         return {
             key: value.to(self.device, self.dtype if value.is_floating_point() else None)
             for key, value in encoded.items()
-            if isinstance(value, Tensor)
+            if isinstance(value, Tensor) and self.accepts(key)
         }
 
     def inputs(self, image: Image.Image, text: str) -> dict[str, Tensor]:
@@ -493,12 +514,159 @@ def qwen3_vl_8b(device: str | None = None) -> HuggingFaceSubject:
     )
 
 
+def default_rope_parameters(
+    config: Any, device: torch.device | str | None = None, *_args: Any, **_kwargs: Any
+) -> tuple[Tensor, float]:
+    """Frequencies of the original rotary embedding, as `transformers` 4.53 computes them.
+
+    Args:
+        config: Configuration holding `rope_theta`, the width of the heads or the hidden size and
+            the number of heads, and optionally `partial_rotary_factor`.
+        device: Device of the frequencies.
+        *_args: Ignored, accepted like the other initializations of the library.
+        **_kwargs: Ignored, accepted like the other initializations of the library.
+
+    Returns:
+        The inverse frequencies and an attention scaling of one.
+    """
+    partial = getattr(config, "partial_rotary_factor", 1.0)
+    head = getattr(config, "head_dim", None) or config.hidden_size // config.num_attention_heads
+    dim = int(head * partial)
+    steps = torch.arange(0, dim, 2, dtype=torch.int64).to(device=device, dtype=torch.float)
+    return 1.0 / (config.rope_theta ** (steps / dim)), 1.0
+
+
+@contextmanager
+def onevision_code() -> Iterator[None]:
+    """Make the model code of LLaVA-OneVision-1.5 buildable under the pinned `transformers`.
+
+    The code reads the original rotary embedding as the entry `default` of the initializations of
+    the library when it builds its rotary embedding, which `transformers` 4.53 held and current
+    versions do not, since every model now computes it itself. The entry is added with the
+    computation of 4.53 while the model is built, and removed afterwards, since other models of the
+    library treat its presence differently. The forward pass reads the table only for dynamic
+    embeddings, which this checkpoint does not use.
+
+    Yields:
+        Nothing. The entry exists inside the context.
+    """
+    from transformers.modeling_rope_utils import ROPE_INIT_FUNCTIONS
+
+    added = "default" not in ROPE_INIT_FUNCTIONS
+    if added:
+        ROPE_INIT_FUNCTIONS["default"] = default_rope_parameters
+    try:
+        yield
+    finally:
+        if added:
+            del ROPE_INIT_FUNCTIONS["default"]
+
+
+def require_every_weight(loading: Mapping[str, Any], checkpoint: str) -> None:
+    """Refuse a model whose weights were not all read from its checkpoint.
+
+    The library loads a model whose weights are missing from the checkpoint, or named otherwise,
+    by initializing them at random and only logging it. Such a model answers, and its answers
+    mean nothing, so it is never evaluated.
+
+    Args:
+        loading: Loading information returned by `from_pretrained` with `output_loading_info`.
+        checkpoint: Name of the checkpoint, for the message.
+
+    Raises:
+        RuntimeError: If a weight of the model was missing, a weight of the checkpoint unused or a
+            shape different.
+    """
+    problems = {
+        kind: sorted(map(str, found))[:5]
+        for kind in ("missing_keys", "unexpected_keys", "mismatched_keys")
+        if (found := loading.get(kind))
+    }
+    if problems:
+        raise RuntimeError(f"{checkpoint} did not load as its checkpoint stores it: {problems}")
+
+
+def onevision_buffers(model: nn.Module) -> None:
+    """Compute again the rotary frequencies of LLaVA-OneVision-1.5 after its weights are loaded.
+
+    Current versions of the library build a model on the meta device and fill only what the
+    checkpoint holds. The rotary embeddings of the language model and of the vision encoder keep
+    their frequencies in buffers that are not saved, which their constructors computed under 4.53
+    and which are left uninitialized now. Each is built again by its own class, with the arguments
+    the model code gives it, and its frequencies are copied into the loaded model.
+
+    Args:
+        model: The loaded model, changed in place.
+    """
+    with onevision_code():
+        for module in model.modules():
+            kind = type(module).__name__
+            if kind not in ("LLaVAOneVision1_5_RotaryEmbedding", "RiceRotaryEmbedding"):
+                continue
+            current = module.get_buffer("inv_freq")
+            build: Any = type(module)
+            if kind == "RiceRotaryEmbedding":
+                fresh = build(2 * current.numel())
+            else:
+                fresh = build(config=module.config)
+                module.attention_scaling = fresh.attention_scaling
+            module.register_buffer("inv_freq", fresh.inv_freq.to(current.device), persistent=False)
+            if hasattr(module, "original_inv_freq"):
+                module.original_inv_freq = module.get_buffer("inv_freq")
+
+
+def require_finite_buffers(model: nn.Module, checkpoint: str) -> None:
+    """Refuse a model holding a floating buffer that is not finite.
+
+    Args:
+        model: The loaded model.
+        checkpoint: Name of the checkpoint, for the message.
+
+    Raises:
+        RuntimeError: If a floating buffer holds a value that is not finite.
+    """
+    broken = [
+        name
+        for name, buffer in model.named_buffers()
+        if buffer.is_floating_point() and not torch.isfinite(buffer).all()
+    ]
+    if broken:
+        raise RuntimeError(f"{checkpoint} holds buffers that are not finite: {broken[:5]}")
+
+
+def onevision_config(config: Any) -> Any:
+    """Configuration of LLaVA-OneVision-1.5 completed with what its model code expects.
+
+    The model code shipped with the checkpoint was written for `transformers` 4.53, whose
+    configurations always held `pad_token_id`, None unless set. Current versions only define it on
+    the configurations that declare it, and the configuration of the language model of this
+    checkpoint does not. The model code reads it as the padding index of its embedding, so it is
+    set to None, the value it had under the version the code was written for.
+
+    Args:
+        config: Configuration read from the checkpoint with its own code.
+
+    Returns:
+        The same configuration, completed.
+    """
+    text = config.text_config
+    if "pad_token_id" not in text.__dict__:
+        text.pad_token_id = None
+    return config
+
+
 def llava_onevision_15_8b(device: str | None = None) -> HuggingFaceSubject:
-    """LLaVA-OneVision-1.5-8B-Instruct in bfloat16.
+    """LLaVA-OneVision-1.5-8B-Instruct in bfloat16, with the default pixel budget of its processor.
 
     The checkpoint ships its own model code, which the library runs when loading it. The code is
-    pinned by the revision of the checkpoint, was written for an earlier version of the library
-    and has not been run here.
+    pinned by the revision of the checkpoint and was written for `transformers` 4.53. It is run
+    unchanged, and four differences of the pinned version are bridged around it, each restoring
+    what 4.53 did: the renaming of the weights the code declares in
+    `_checkpoint_conversion_mapping`, which current versions ignore and take as `key_mapping`, the
+    padding index of the language configuration, by `onevision_config`, the original rotary
+    embedding, by `onevision_code`, and the `mm_token_type_ids` the processor now returns, which
+    `HuggingFaceSubject.moved` leaves out since the forward pass does not take it. The processor
+    needs `torchvision`. Loading fails unless every weight is read from the checkpoint.
 
     Args:
         device: Device to load the model on, or None for the accelerator when one is present.
@@ -506,15 +674,37 @@ def llava_onevision_15_8b(device: str | None = None) -> HuggingFaceSubject:
     Returns:
         The subject, named `llava-onevision-1.5-8b`.
     """
-    from transformers import AutoModelForCausalLM, AutoProcessor
+    from transformers import AutoConfig, AutoModelForCausalLM, AutoProcessor
+    from transformers.dynamic_module_utils import get_class_from_dynamic_module
 
     checkpoint, revision = ONEVISION_15
     processor = AutoProcessor.from_pretrained(  # type: ignore[no-untyped-call]
         checkpoint, revision=revision, trust_remote_code=True
     )
-    model: nn.Module = AutoModelForCausalLM.from_pretrained(
-        checkpoint, revision=revision, dtype=torch.bfloat16, trust_remote_code=True
+    config = onevision_config(
+        AutoConfig.from_pretrained(checkpoint, revision=revision, trust_remote_code=True)
     )
+    code: Any = get_class_from_dynamic_module(
+        config.auto_map["AutoModelForCausalLM"], checkpoint, revision=revision
+    )
+    # Fetched ahead of the automatic class, the class would not be marked as remote code, and
+    # generation creates `cache_position`, which the code reads, only for remote code.
+    code.register_for_auto_class("AutoModelForCausalLM")
+    model: nn.Module
+    loading: dict[str, Any]
+    with onevision_code():
+        model, loading = AutoModelForCausalLM.from_pretrained(  # type: ignore[misc]
+            checkpoint,
+            revision=revision,
+            config=config,
+            dtype=torch.bfloat16,
+            trust_remote_code=True,
+            key_mapping=code._checkpoint_conversion_mapping,
+            output_loading_info=True,
+        )
+    require_every_weight(loading, checkpoint)
+    onevision_buffers(model)
+    require_finite_buffers(model, checkpoint)
     return HuggingFaceSubject(
         model.to(_device(device)),
         processor,
