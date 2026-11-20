@@ -889,6 +889,34 @@ condition is compared with the unmodified model on the images where neither brea
   block 35 can change. The unmodified probe there stays at 0.951 under REVIS and falls to 0.771
   under its control.
 
+### POPE asked for a yes or no, Qwen3-VL-8B
+
+`pope-adversarial-yn` and `repope-adversarial-yn` append "Please answer yes or no." to every
+question, as the REVIS and V-ITI scripts ask them. They ran as Slurm job 37688 on the same kind of
+card, with the vectors and the calibration of run `job-37620` and the code of this branch, in 19
+minutes. Their rows are kept apart from the leaderboard as a sensitivity analysis.
+
+| | Unmodified | VTI | VTI control | REVIS | REVIS control |
+|---|---|---|---|---|---|
+| POPE adversarial F1, as asked here | 0.869 | 0.867 | 0.870 | 0.859 | 0.872 |
+| POPE adversarial F1, questions as written | 0.871 | 0.848 | 0.863 | 0.869 | 0.706 |
+| Yes ratio, as asked here | 0.499 | 0.535 | 0.521 | 0.484 | 0.523 |
+| AUROC, as asked here | 0.944 | 0.944 | 0.943 | 0.929 | 0.945 |
+| RePOPE F1, as asked here | 0.911 | 0.896 | 0.904 | 0.897 | 0.904 |
+
+- **The model answers in one word.** Every answer of the unmodified model and of both controls
+  takes two tokens, so the parser reads each as the model meant it. The unmodified F1 stays at
+  0.869, against 0.871 with the long answers.
+- **The fall of the REVIS control was the parser.** Asked for one word, the control scores 0.872,
+  as the unmodified model does, where the bold "**not**" of its long answers gave 0.706.
+- **The loss of VTI on POPE shrinks to nothing.** Its F1 is 0.867, within 0.002 of the unmodified
+  model, though it still raises the yes ratio to 0.535. On RePOPE it still loses 1.5 points.
+- **This prompt opens the REVIS gate where it matters.** REVIS moves the probability of yes by
+  more than 0.001 on 1274 of the 3000 questions and flips the first token of 45, against 4 with the
+  questions as written, lowering the AUROC from 0.944 to 0.929 and the F1 to 0.859. 51 of its
+  answers run to the 64-token limit in a loop of "actually", the word its CHAIR descriptions
+  repeat. On LLaVA-1.5-7B the same sentence opened the gate of block 31 on MME.
+
 ### The answers item by item, Qwen3-VL-8B
 
 From the answers of run `job-37620`, with `swce-diagnose --items`, read beside those of
