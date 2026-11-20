@@ -858,15 +858,25 @@ whole of POPE adversarial, RePOPE, CHAIR and MME. Its scores are in `results/lea
 
 ### Comparison with published results, Qwen3-VL-8B
 
-No published value to compare with has been found. The Qwen3-VL technical report, arXiv
-2511.21631v2, reports neither MME, POPE nor CHAIR for any size. Its closest benchmark is
-HallusionBench, 61.1 for Qwen3-VL-8B-Instruct in its Table 4, which measures something else. It
-evaluates through vLLM or SGLang, and its text benchmarks sample the small instruct models at
-temperature 1.0, top-p 1.0, top-k 40 and a presence penalty of 2.0, unlike the shipped settings
-used here. The model card lists none of the three benchmarks in text either. The unmodified MME
-here is 2403, with a perception score of 1741 and a cognition score of 662, under the questions as
-MME asks them and the shipped sampling settings. A comparison needs an independent evaluation of
-the same checkpoint.
+The Qwen3-VL technical report, arXiv 2511.21631v2, reports neither MME, POPE nor CHAIR for any
+size, and the model card lists none of them in text. Its closest benchmark is HallusionBench, 61.1
+for Qwen3-VL-8B-Instruct in its Table 4. Independent papers report the unmodified model as a
+baseline. Their protocols differ from this one and from each other, so the comparison is of size,
+not of the last digit. The numbers were read from the HTML versions of the papers and should be
+checked against their PDFs before they are quoted.
+
+| | Here | Other papers |
+|---|---|---|
+| MME perception and cognition | 1741 and 662 | 1744.7 and 656.7 (SAP, arXiv 2602.16702, Table 2, VLMEvalKit) |
+| POPE adversarial F1, precision and recall | 87.1, 86.5 and 87.7 | 85.24, 80.25 and 91.35 (AdaVBoost, arXiv 2602.13600, Table 5, averaged over COCO, A-OKVQA and GQA) |
+| POPE adversarial accuracy | 87.0 | 88.2 on a held-out split of 400 questions, greedy (arXiv 2605.13156, Table 13) |
+| CHAIR_S and CHAIR_I | 53.2 and 9.7 | 58.8 and 10.6 (AdaVBoost, Table 1) |
+
+- **MME agrees.** The perception and cognition scores land within 6 points of an evaluation
+  through VLMEvalKit, which labels cognition "reasoning".
+- **POPE and CHAIR are of the same size.** The POPE comparison mixes in A-OKVQA and GQA images,
+  and the CHAIR protocol of AdaVBoost, its images and its token budget, is
+  not stated, so neither difference is attributed.
 
 The interventions, the fitting of the VTI directions, the principal direction of REVIS, its
 selection of a layer and the states VISTA reads are tested against the official code.
