@@ -30,3 +30,15 @@ Metrics: `pope-adversarial` f1, `repope-adversarial` f1, `chair` chair_s, `mme` 
 | vti-random | code-default | nothing | 0.8686 [0.8559, 0.8814] | 0.9158 [0.9044, 0.926] | 0.374 [0.328, 0.416] | 2262 [2183, 2334] |
 
 Metrics: `pope-adversarial` f1, `repope-adversarial` f1, `chair` chair_s, `mme` total
+
+## qwen3-vl-8b
+
+| Method | Setting | Fitted on | pope-adversarial | repope-adversarial | chair | mme |
+|---|---|---|---|---|---|---|
+| revis | code-default | lure-pairs, coco-train2014 | 0.8694 [0.8558, 0.8813] | 0.9103 [0.8982, 0.9207] | 0.03 [0.016, 0.046] | 2365 [2294, 2438] |
+| revis-random | code-default | nothing | 0.7059 [0.6976, 0.7139] | 0.682 [0.6694, 0.6945] | 0.56 [0.516, 0.604] | 2396 [2324, 2470] |
+| unmodified | default | nothing | 0.8712 [0.8586, 0.8835] | 0.9116 [0.8992, 0.9224] | 0.532 [0.486, 0.576] | 2403 [2336, 2474] |
+| vti | code-default | coco-train2014 | 0.8479 [0.8355, 0.8592] | 0.8631 [0.8487, 0.876] | 0.094 [0.068, 0.118] | 2382 [2310, 2454] |
+| vti-random | code-default | nothing | 0.8632 [0.8501, 0.875] | 0.9006 [0.8872, 0.9122] | 0.496 [0.452, 0.54] | 2390 [2315, 2460] |
+
+Metrics: `pope-adversarial` f1, `repope-adversarial` f1, `chair` chair_s, `mme` total
