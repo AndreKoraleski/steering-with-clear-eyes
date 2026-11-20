@@ -324,6 +324,52 @@ blocks and their controls. The probes were cross-validated over images with five
   under either still reaches 0.90. At block 31, REVIS changes nothing at the last prompt token,
   as its gate stays shut there.
 
+### Linear probes on LLaVA-OneVision-1.5-8B
+
+The same probes on `llava-onevision-1.5-8b`, on the 3000 questions of POPE adversarial, under the
+unmodified model, VTI and REVIS at their `code-default` settings and their controls, with
+`swce-diagnose --probe` on one RTX 4090. The model and the probes of one fold in double precision
+do not fit together on that card, so the model was moved off it once the states were read, which
+changes no number.
+
+| Block | 0 | 4 | 6 | 8 | 10 | 12 | 14 | 17 | 18 | 19 | 24 | 35 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Probe of the unmodified model, AUROC | 0.636 | 0.692 | 0.753 | 0.788 | 0.850 | 0.883 | 0.925 | 0.939 | 0.937 | 0.941 | 0.946 | 0.938 |
+| Probe of the unmodified model under VTI | 0.576 | 0.597 | 0.649 | 0.577 | 0.626 | 0.628 | 0.745 | 0.810 | 0.858 | 0.923 | 0.896 | 0.840 |
+| Under the VTI control | 0.543 | 0.584 | 0.665 | 0.670 | 0.694 | 0.781 | 0.827 | 0.843 | 0.832 | 0.908 | 0.938 | 0.916 |
+| Under REVIS | 0.636 | 0.692 | 0.753 | 0.788 | 0.850 | 0.883 | 0.925 | 0.939 | 0.937 | 0.941 | 0.718 | 0.758 |
+| Under the REVIS control | 0.636 | 0.692 | 0.753 | 0.788 | 0.850 | 0.883 | 0.925 | 0.939 | 0.937 | 0.941 | 0.649 | 0.855 |
+
+- **The answer is readable about eight blocks before the logit lens shows it.** The probe reaches
+  0.85 at block 10 and 0.93 at block 14, where the lens is still near chance, and the lens only
+  reads it from block 18. On LLaVA-1.5-7B the gap is about four blocks, 0.85 at block 8 against a
+  lens readable from block 12, so the answer forms earlier in the stream of OneVision, relative to
+  where the head can read it, than in that of LLaVA-1.5-7B.
+- **It forms over the same share of the model.** The probe passes 0.85 at block 10 of 36 on
+  OneVision and block 8 of 32 on LLaVA-1.5-7B, and reaches its plateau at block 17 against block
+  11. Activation patching puts the answer at its own position from block 20 on OneVision and
+  block 13 on LLaVA-1.5-7B, so on both models the probe reads the answer at the last token a few
+  blocks before that position is what decides it.
+- **Nothing is lost after block 17.** The probe stays at 0.94 to 0.95 from block 17 to the
+  output, the AUROC of the final answer of the model, as on LLaVA-1.5-7B.
+- **No method adds what the stream holds about the answer.** A probe fitted under REVIS or its
+  control matches the unmodified probe to the third decimal up to block 20 and is within 0.007 of
+  it after. Under VTI it is lower by up to 0.020 between blocks 11 and 13 and within 0.014
+  elsewhere, as on LLaVA-1.5-7B.
+- **VTI displaces the stream at every block below 19.** The unmodified probe applied under VTI
+  falls to 0.55 to 0.65 between blocks 0 and 13 and recovers to 0.92 at blocks 19 and 20, and its
+  score moves by up to 5.6 standard deviations, with a sign that changes from block to block. Its
+  control falls to 0.54 to 0.70 below block 11 and recovers sooner. A probe fitted under VTI still
+  finds the answer, so VTI moves the stream without erasing the answer, as on LLaVA-1.5-7B, over
+  more blocks.
+- **REVIS at block 21 displaces the stream as its control does, and less.** Both leave every
+  block below 21 as it was. From block 21 the unmodified probe falls to 0.56 to 0.80 under REVIS
+  and to 0.52 to 0.86 under the control, and its score moves toward no by up to 2.3 standard
+  deviations under REVIS and 3.5 under the control. A probe fitted under either still reaches
+  0.94, so the answer moves with the stream and stays as readable. The block 30 setting of
+  LLaVA-1.5-7B does the same. It fits the answers: REVIS changes 28 of the 3000 answers of POPE
+  and its control 83.
+
 ### LLaVA-OneVision-1.5-8B
 
 The main experiment ran on `llava-onevision-1.5-8b` with VTI and REVIS at their `code-default`
