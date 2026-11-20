@@ -58,6 +58,19 @@ uv run python experiments/main.py --model llava_15 --score-only
 
 `--model` also takes `qwen3_vl_8b`, `llava_onevision_15_8b` and `llava_15_rehearsal`.
 
+For a single sequential Qwen3 job on the H100 Slurm partition, see
+[the preparation checklist](qwen3-h100.md). Its launcher includes strict checkpoint validation,
+a forty-question native-checkpoint comparison, smoke, full evaluation, scoring and probes.
+It now stops after the preflight by default; `--full` requires explicit authorization to proceed.
+The original Qwen job failed the reference gate before smoke. An isolated test passed after
+excluding cuDNN SDPA; the opt-in implementation then passed the real preflight **40/40** in job
+**37614**, which stopped before smoke and full evaluation. The policy is now centralized in
+`HuggingFaceSubject` rather than configured by each job; that refactoring still needs a fresh
+real-model check in every new run. Job 37619 passed that gate 40/40, then stopped during REVIS
+vector fitting on an empty-image processor validation error. See the checklist for the fix,
+evidence and runtime scope. The full Qwen evaluation then ran as run `job-37620` (jobs 37620
+and 37633); [docs/methods.md](methods.md#qwen3-vl-8b) describes its results.
+
 ## 2. Jobs
 
 Each line is one job. `--generate-only` writes answers and scores nothing, and `--lens` records

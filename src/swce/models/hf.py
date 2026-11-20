@@ -3,8 +3,9 @@
 Every checkpoint is pinned by revision and loaded without quantization, in the precision its
 authors use. Generation uses the settings shipped with the checkpoint, unchanged. Some
 checkpoints sample by default, so the random state is seeded before every generation, which makes
-an answer repeatable on one machine whatever the order of the items. Weights are downloaded by
-the library into its own cache and never enter git.
+answers independent of item order when the underlying operations are deterministic. Seeding
+alone does not guarantee repeatable GPU kernels. Weights are downloaded by the library into
+its own cache and never enter git.
 
 Module paths differ between architectures and changed across versions of the library, so the
 blocks of the decoder and of the vision encoder are found by name.
@@ -53,6 +54,9 @@ def module_list(model: nn.Module, *fragments: str) -> nn.ModuleList:
 class HuggingFaceSubject(Subject):
     """Vision language model of the `transformers` library with its default prompt template.
 
+    Construction disables cuDNN SDPA process-wide, including subsequent fitting and
+    calibration. Other attention backends and checkpoint generation settings are unchanged.
+
     Attributes:
         model: The model, in evaluation mode.
         processor: Its processor, or None for a model built without one in tests.
@@ -75,6 +79,7 @@ class HuggingFaceSubject(Subject):
         fixed_grid: bool,
         seed: int = 0,
     ):
+        torch.backends.cuda.enable_cudnn_sdp(False)
         self.model = model.eval()
         self.processor = processor
         self.name = name
@@ -96,7 +101,7 @@ class HuggingFaceSubject(Subject):
         return next(self.model.parameters()).dtype
 
     def settings(self) -> dict[str, object]:
-        """Precision, seed, library version and generation settings of the checkpoint.
+        """Precision, seed, library version, cuDNN SDPA flag and checkpoint generation settings.
 
         Returns:
             The settings as values that can be written as JSON.
@@ -108,6 +113,7 @@ class HuggingFaceSubject(Subject):
             "transformers": transformers.__version__,
             "dtype": str(self.dtype),
             "seed": self.seed,
+            "cudnn_sdp_enabled": torch.backends.cuda.cudnn_sdp_enabled(),  # type: ignore[no-untyped-call]
             "generation": generation.to_dict() if generation is not None else {},
         }
 
@@ -519,9 +525,13 @@ def qwen3_vl_8b(device: str | None = None) -> HuggingFaceSubject:
 
     checkpoint, revision = QWEN3_VL
     processor = AutoProcessor.from_pretrained(checkpoint, revision=revision)  # type: ignore[no-untyped-call]
-    model: nn.Module = Qwen3VLForConditionalGeneration.from_pretrained(
-        checkpoint, revision=revision, dtype=torch.bfloat16
+    model: nn.Module
+    loading: dict[str, Any]
+    model, loading = Qwen3VLForConditionalGeneration.from_pretrained(  # type: ignore[misc]
+        checkpoint, revision=revision, dtype=torch.bfloat16, output_loading_info=True
     )
+    require_every_weight(loading, checkpoint)
+    require_finite_buffers(model, checkpoint)
     return HuggingFaceSubject(
         model.to(_device(device)),
         processor,

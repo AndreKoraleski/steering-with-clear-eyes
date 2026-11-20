@@ -376,13 +376,22 @@ def _states(subject: Any, question: str, answer: str, image: Image.Image | None)
             {"role": "user", "content": user},
             {"role": "assistant", "content": [{"type": "text", "text": answer}]},
         ]
-        encoded = processor.apply_chat_template(
-            messages,
-            tokenize=True,
-            add_generation_prompt=True,
-            return_dict=True,
-            return_tensors="pt",
-        )
+        if image is None:
+            # Keep the official empty-image prompt, including its image placeholder and
+            # generation suffix. New processors reject that placeholder without pixels;
+            # render the same template and tokenize it directly, as in the LLaVA branch.
+            prompt = processor.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=True
+            )
+            encoded = processor.tokenizer([prompt], return_tensors="pt", padding=True)
+        else:
+            encoded = processor.apply_chat_template(
+                messages,
+                tokenize=True,
+                add_generation_prompt=True,
+                return_dict=True,
+                return_tensors="pt",
+            )
     else:
         if subject.name.startswith("llava-1.5"):
             # The official prompt of LLaVA-1.5 keeps the image placeholder without an image.
