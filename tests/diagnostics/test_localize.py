@@ -261,6 +261,22 @@ def test_answer_attention_is_a_share_of_every_position() -> None:
     assert model.config._attn_implementation == before
 
 
+def test_answer_attention_asks_for_the_weights() -> None:
+    from swce.diagnostics.attention import answer_attention
+
+    subject = tiny_llava()
+    asked: list[Any] = []
+    handle = subject.model.register_forward_pre_hook(
+        lambda _module, _args, kwargs: asked.append(kwargs.get("output_attentions")),
+        with_kwargs=True,
+    )
+    try:
+        answer_attention(subject, tiny_inputs(subject))
+    finally:
+        handle.remove()
+    assert asked == [True]
+
+
 def test_resized_grid_places_boxes_on_merged_tokens() -> None:
     from swce.diagnostics.attention import ResizedGrid
 

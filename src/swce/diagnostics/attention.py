@@ -176,7 +176,11 @@ def head_value_norms(values: Tensor, output: Tensor, heads: int) -> Tensor:
 
 @contextmanager
 def eager(subject: HuggingFaceSubject) -> Iterator[None]:
-    """Compute attention eagerly while open, so that its weights are returned."""
+    """Compute attention eagerly while open, so that its weights are returned.
+
+    Models written as remote code may ignore the switch, so the forward pass must still ask for
+    the weights with `output_attentions`.
+    """
     model: Any = subject.model
     before = model.config._attn_implementation
     model.set_attn_implementation("eager")
@@ -217,7 +221,7 @@ def answer_attention(subject: HuggingFaceSubject, inputs: Mapping[str, Tensor]) 
         handles.append(attention.get_submodule("v_proj").register_forward_hook(value_hook(index)))
     try:
         with eager(subject):
-            subject.model(**inputs)
+            subject.model(**inputs, output_attentions=True)
     finally:
         for handle in handles:
             handle.remove()
