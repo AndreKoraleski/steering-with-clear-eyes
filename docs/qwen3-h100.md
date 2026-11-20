@@ -255,7 +255,8 @@ the block (34), threshold (-0.111) and signs of REVIS; the gate rates, inferred 
 first-token probabilities, as 100% for method and control on POPE and MME; the descriptions at
 the budget and in loops, and the matched-recall shortcut, per condition; F1 with yes ratio,
 AUROC and d'; the MME cost; and the environment. The comparison of the unmodified MME with the
-literature is still open, since the Qwen3-VL technical report has not been checked.
+literature is still open: the Qwen3-VL technical report reports no MME, POPE or CHAIR, so it
+needs an independent evaluation of the same checkpoint.
 
 Gate-rate and caption-loop analyses are not automated by this wrapper. Keep the captured
 artifacts and outputs for those analyses; some diagnostics may require additional inference.
