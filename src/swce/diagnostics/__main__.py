@@ -8,12 +8,14 @@ needs no model and summarizes every reading found there. `--probe` fits linear p
 expected answer on every block instead, cross-validated over images, and writes them to
 `diagnostics/MODEL/probe-TASK.csv`.
 
-Three readings localize where a wrong answer of POPE comes from, on the unmodified model.
+The readings localize where a wrong answer of POPE comes from, on the unmodified model.
 `--prior` asks every question without its image and sets the answers against COCO co-occurrence,
 `--encoder` probes the vision encoder for the object of every question, and `--knockout` blocks
 the attention between the answer, the text and the image in windows of layers. They write
 `prior-TASK.csv`, `encoder-TASK.csv` and `knockout-TASK.csv`, with summaries, under
-`diagnostics/MODEL`. No answer is generated and nothing is scored.
+`diagnostics/MODEL`. `--encoder-regions` pools COCO boxes and writes recognition and
+missed-object AUROCs to `encoder-regions-TASK.csv`, using first-token margins. No answer is
+generated and nothing is scored.
 """
 
 import argparse
@@ -51,6 +53,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--prior", action="store_true", help="answer every question without its image"
     )
+    parser.add_argument("--encoder-regions", action="store_true", help="probe object regions")
     parser.add_argument("--encoder", action="store_true", help="probe the vision encoder")
     parser.add_argument("--knockout", action="store_true", help="block attention routes by window")
     parser.add_argument(
@@ -88,7 +91,14 @@ def main(argv: list[str] | None = None) -> int:
     subject = load_factory(args.subject)()
     if not isinstance(subject, Subject):
         raise TypeError(f"{args.subject} built {type(subject).__name__}, not a Subject")
-    if args.prior or args.encoder or args.knockout or args.patching or args.attention:
+    if (
+        args.prior
+        or args.encoder_regions
+        or args.encoder
+        or args.knockout
+        or args.patching
+        or args.attention
+    ):
         return localize(subject, args)
     steerers = load_steerers(args.methods)
     if args.probe:
@@ -155,7 +165,7 @@ def localize(subject: Subject, args: argparse.Namespace) -> int:
     """Run the readings that localize a wrong answer, on the unmodified model."""
     from swce.diagnostics.attention import attention_task, summarize_attention, visibility
     from swce.diagnostics.coco import categories, image_boxes, image_objects
-    from swce.diagnostics.encoder import encoder_task
+    from swce.diagnostics.encoder import encoder_regions_task, encoder_task
     from swce.diagnostics.knockout import knockout_task, summarize_knockout
     from swce.diagnostics.patching import patching_task, summarize_patching
     from swce.diagnostics.prior import margins, prior_task, write_frames
@@ -172,7 +182,9 @@ def localize(subject: Subject, args: argparse.Namespace) -> int:
         answers, summary = prior_task(subject, args.task, limit=limit, data=args.data)
         frames += [(f"prior-{args.task}", answers), (f"prior-{args.task}-summary", summary)]
         print(summary.to_string(index=False, float_format=lambda value: f"{value:.3f}"))
-    if answers is None and (args.knockout or args.patching or args.attention):
+    if answers is None and (
+        args.knockout or args.patching or args.attention or args.encoder_regions
+    ):
         answers = margins(subject, args.task, limit=limit, data=args.data)
     if args.knockout:
         assert answers is not None
@@ -210,6 +222,29 @@ def localize(subject: Subject, args: argparse.Namespace) -> int:
         )
         frames.append((f"encoder-{args.task}", probed))
         print(probed.to_string(index=False, float_format=lambda value: f"{value:.3f}"))
+    if args.encoder_regions:
+        assert answers is not None
+        images = list(dict.fromkeys(example.image for example in descriptions()))[
+            : args.encoder_train
+        ]
+        fetch_all(images)
+        train_boxes = image_boxes("train")
+        region_training = [
+            (lambda name=name: open_image(name), train_boxes.get(name, (1, 1, []))[2])
+            for name in images
+        ]
+        regions = encoder_regions_task(
+            subject,
+            args.task,
+            region_training,
+            categories(),
+            answers,
+            image_boxes("val"),
+            limit=limit,
+            data=args.data,
+        )
+        frames.append((f"encoder-regions-{args.task}", regions))
+        print(regions.to_string(index=False, float_format=lambda value: f"{value:.3f}"))
     for path in write_frames(frames, folder):
         print(path)
     return 0
