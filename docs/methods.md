@@ -332,6 +332,48 @@ or REVIS.
   the unmodified descriptions. The cause of the difference is not known, and the finding holds
   for this protocol.
 
+### POPE without the threshold
+
+F1 mixes how well a model tells present from absent objects with how readily it says yes. The
+rows of `results/leaderboard.csv` also hold the yes ratio, d' and the criterion c of signal
+detection theory, computed from the same answers, and the AUROC of the margin of the first answer
+token, which needs no threshold at all. A positive c is a model that says no more readily. Changes
+are against the unmodified model, with their 95% bootstrap intervals over images.
+
+| POPE adversarial | F1 | Yes ratio | c | d' | AUROC |
+|---|---|---|---|---|---|
+| LLaVA-1.5-7B, unmodified | 0.802 | 0.617 | -0.42 | 1.68 | 0.907 |
+| VTI, POPE setting | +0.005 [-0.003, +0.013] | -0.037 | +0.13 | +0.02 [-0.06, +0.08] | -0.009 [-0.013, -0.004] |
+| VTI control | +0.006 [-0.001, +0.011] | -0.027 | +0.09 | +0.03 [-0.03, +0.08] | -0.000 [-0.002, +0.002] |
+| REVIS, block 30 | -0.015 [-0.023, -0.007] | +0.073 | -0.27 | -0.01 [-0.09, +0.07] | -0.000 |
+| REVIS control, block 30 | -0.008 [-0.014, -0.001] | +0.047 | -0.18 | +0.00 [-0.06, +0.07] | +0.000 |
+| OneVision-1.5-8B, unmodified | 0.866 | 0.462 | +0.18 | 2.30 | 0.942 |
+| VTI | -0.003 [-0.009, +0.004] | +0.026 | -0.13 | -0.09 [-0.16, -0.04] | -0.001 [-0.003, +0.001] |
+| VTI control | +0.003 [-0.001, +0.008] | +0.012 | -0.06 | -0.01 [-0.05, +0.04] | -0.001 [-0.002, +0.000] |
+| REVIS | +0.001 [-0.003, +0.005] | -0.001 | +0.01 | +0.02 [-0.02, +0.05] | +0.000 [-0.001, +0.002] |
+| REVIS control | -0.003 [-0.010, +0.003] | -0.020 | +0.11 | +0.05 [-0.01, +0.12] | -0.001 [-0.003, +0.001] |
+
+REVIS at block 31 of LLaVA-1.5-7B and its control answer POPE exactly as the unmodified model
+does, so they are left out. Every change of the yes ratio and of c in the table excludes zero
+except those of REVIS on OneVision.
+
+- **Every change of F1 on POPE is a move of the threshold.** On both models and both label sets
+  no change of d' excludes zero but that of VTI on OneVision POPE, and the changes of F1 follow
+  the yes ratio. REVIS at block 30 loses F1 on LLaVA-1.5-7B by saying yes more, and its random
+  control makes about two thirds of that shift. VTI gains on LLaVA-1.5-7B by saying no more,
+  and its control gains as much.
+- **The one change that survives without the threshold is a loss, by VTI on both models.** On
+  LLaVA-1.5-7B VTI lowers the AUROC by 0.009 on POPE and 0.011 on RePOPE where its control
+  changes it by 0.002 at most, so the margin of its first token ranks present and absent objects
+  slightly worse. On OneVision it lowers d' by 0.09, while the AUROC stays where it was, so the
+  ranking of the margins holds and the answers it gives separate slightly less.
+- **VTI moves the threshold the other way on each model.** It raises c on LLaVA-1.5-7B, which
+  says yes too often, and lowers it on OneVision, which says yes to fewer than half of the
+  questions, so whether it gains or loses F1 on POPE depends on where the model starts.
+- RePOPE gives the same picture. VTI lowers the AUROC by 0.011 on LLaVA-1.5-7B and by 0.001 on
+  OneVision, every other change of the AUROC is 0.003 or less, and no change of d' excludes
+  zero.
+
 ### Linear probes on POPE adversarial
 
 `swce-diagnose --probe` fitted a probe of the expected answer on every block, on the 3000
@@ -364,6 +406,52 @@ blocks and their controls. The probes were cross-validated over images with five
   under either still reaches 0.90. At block 31, REVIS changes nothing at the last prompt token,
   as its gate stays shut there.
 
+### Linear probes on LLaVA-OneVision-1.5-8B
+
+The same probes on `llava-onevision-1.5-8b`, on the 3000 questions of POPE adversarial, under the
+unmodified model, VTI and REVIS at their `code-default` settings and their controls, with
+`swce-diagnose --probe` on one RTX 4090. The model and the probes of one fold in double precision
+do not fit together on that card, so the model was moved off it once the states were read, which
+changes no number.
+
+| Block | 0 | 4 | 6 | 8 | 10 | 12 | 14 | 17 | 18 | 19 | 24 | 35 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Probe of the unmodified model, AUROC | 0.636 | 0.692 | 0.753 | 0.788 | 0.850 | 0.883 | 0.925 | 0.939 | 0.937 | 0.941 | 0.946 | 0.938 |
+| Probe of the unmodified model under VTI | 0.576 | 0.597 | 0.649 | 0.577 | 0.626 | 0.628 | 0.745 | 0.810 | 0.858 | 0.923 | 0.896 | 0.840 |
+| Under the VTI control | 0.543 | 0.584 | 0.665 | 0.670 | 0.694 | 0.781 | 0.827 | 0.843 | 0.832 | 0.908 | 0.938 | 0.916 |
+| Under REVIS | 0.636 | 0.692 | 0.753 | 0.788 | 0.850 | 0.883 | 0.925 | 0.939 | 0.937 | 0.941 | 0.718 | 0.758 |
+| Under the REVIS control | 0.636 | 0.692 | 0.753 | 0.788 | 0.850 | 0.883 | 0.925 | 0.939 | 0.937 | 0.941 | 0.649 | 0.855 |
+
+- **The answer is readable about eight blocks before the logit lens shows it.** The probe reaches
+  0.85 at block 10 and 0.93 at block 14, where the lens is still near chance, and the lens only
+  reads it from block 18. On LLaVA-1.5-7B the gap is about four blocks, 0.85 at block 8 against a
+  lens readable from block 12, so the answer forms earlier in the stream of OneVision, relative to
+  where the head can read it, than in that of LLaVA-1.5-7B.
+- **It forms over the same share of the model.** The probe passes 0.85 at block 10 of 36 on
+  OneVision and block 8 of 32 on LLaVA-1.5-7B, and reaches its plateau at block 17 against block
+  11. Activation patching puts the answer at its own position from block 20 on OneVision and
+  block 13 on LLaVA-1.5-7B, so on both models the probe reads the answer at the last token a few
+  blocks before that position is what decides it.
+- **Nothing is lost after block 17.** The probe stays at 0.94 to 0.95 from block 17 to the
+  output, the AUROC of the final answer of the model, as on LLaVA-1.5-7B.
+- **No method adds what the stream holds about the answer.** A probe fitted under REVIS or its
+  control matches the unmodified probe to the third decimal up to block 20 and is within 0.007 of
+  it after. Under VTI it is lower by up to 0.020 between blocks 11 and 13 and within 0.014
+  elsewhere, as on LLaVA-1.5-7B.
+- **VTI displaces the stream at every block below 19.** The unmodified probe applied under VTI
+  falls to 0.55 to 0.65 between blocks 0 and 13 and recovers to 0.92 at blocks 19 and 20, and its
+  score moves by up to 5.6 standard deviations, with a sign that changes from block to block. Its
+  control falls to 0.54 to 0.70 below block 11 and recovers sooner. A probe fitted under VTI still
+  finds the answer, so VTI moves the stream without erasing the answer, as on LLaVA-1.5-7B, over
+  more blocks.
+- **REVIS at block 21 displaces the stream as its control does, and less.** Both leave every
+  block below 21 as it was. From block 21 the unmodified probe falls to 0.56 to 0.80 under REVIS
+  and to 0.52 to 0.86 under the control, and its score moves toward no by up to 2.3 standard
+  deviations under REVIS and 3.5 under the control. A probe fitted under either still reaches
+  0.94, so the answer moves with the stream and stays as readable. The block 30 setting of
+  LLaVA-1.5-7B does the same. It fits the answers: REVIS changes 28 of the 3000 answers of POPE
+  and its control 83.
+
 ### LLaVA-OneVision-1.5-8B
 
 The main experiment ran on `llava-onevision-1.5-8b` with VTI and REVIS at their `code-default`
@@ -388,21 +476,101 @@ are in `results/leaderboard.csv`.
   beyond that shortcut. Its MME changes by -15 [-39, +3].
 - **The REVIS control does not raise CHAIR_S significantly.** Its change is +5.0 [-0.2, +10.6]
   points with a Holm p of 0.73, and its descriptions run to 381 words, more than twice the
-  unmodified length, which issue #20 checks for loops. The difference between REVIS and its
-  control rests on that control and is not reported as a gain until then.
+  unmodified length. They reach the token limit without looping, as checked below, so its CHAIR
+  and the difference of 12.8 points between REVIS and its control stand.
 - **VTI does not help.** Its CHAIR_S is 34.4, within the interval of the unmodified model, with
-  descriptions of 304 words, and its MME falls by 51 [2, 100]. Its control changes CHAIR_S by +4.0
-  points, not significantly, at 195 words.
+  descriptions of 304 words, and its MME falls by 51 [2, 100]. That CHAIR_S is not comparable,
+  since 131 of its descriptions break into loops or single words, and neither is the difference
+  of 3.0 points between VTI and its control. Its control changes CHAIR_S by +4.0 points, not
+  significantly, at 195 words.
 - No method is non-inferior to the unmodified model on MME.
 - **The logit lens separates the questions whose answer is yes from those whose answer is no.**
   On POPE adversarial its AUROC stays near 0.5 up to block 17, rises to 0.87 at block 18 and 0.93
   at block 19, and stays near 0.94 to the output, under every method. It reads the expected answer
   and not whether the answer of the model is right.
 - **REVIS changes the stream from block 21 on**, the block its calibration selected, and leaves
-  the blocks below it as they were. Why its gate opens there without moving any answer of POPE is
-  issue #19.
+  the blocks below it as they were. Why its gate opens there without moving POPE is below.
 
 Lengths are in words, as `results/leaderboard.csv` reports them.
+
+### Loops at the token limit on LLaVA-OneVision-1.5-8B
+
+Every CHAIR description of the five conditions was sorted by its last 300 characters. A
+description loops when those characters repeat a period of at most 80 characters at 85% of
+their positions, or when it ends in a sequence of at most 20 words repeated three times or more.
+It is fragmented when its lines hold at most two words, or when letters make up less than 35% of
+those characters. CHAIR is then computed again without those descriptions, on each condition
+and on the 369 images where no condition loops or fragments.
+
+| Condition | At the limit of 512 tokens | Loops | Fragmented | CHAIR_S, all 500 | CHAIR_S, 369 images | Change from unmodified on the 369 |
+|---|---|---|---|---|---|---|
+| Unmodified | 0 | 0 | 0 | 33.4 | 33.1 | |
+| VTI | 299 | 34 | 97 | 34.4 | 37.9 | +4.8 [-0.5, +10.3] |
+| VTI control | 2 | 0 | 0 | 37.4 | 37.4 | +4.3 [-0.5, +9.8] |
+| REVIS | 0 | 0 | 0 | 25.6 | 25.5 | -7.6 [-12.7, -2.4] |
+| REVIS control | 186 | 0 | 0 | 38.4 | 37.7 | +4.6 [-1.4, +10.8] |
+
+Intervals are bootstrap intervals over the images, paired with the unmodified model.
+
+- **Only VTI loops, and its loops flatter its CHAIR.** Its 34 loops repeat a numbered list or an
+  empty bullet, such as "44. A container." up to the limit, and its 97 fragmented descriptions
+  put one or two words on each line. Without them its CHAIR_S rises from
+  34.4 to 37.9. Its CHAIR row on the leaderboard, and the `beyond_control` of VTI on CHAIR, which
+  compares it with its control, are not comparable.
+- **The REVIS control reaches the limit without looping.** Its 186 long descriptions keep fluent
+  sentences but leave the image and continue as essays, for instance "the image serves as a
+  reminder of the power of photography". Its CHAIR_S moves by less than a point without them, so
+  it is confirmed, and so is the `beyond_control` of REVIS on CHAIR, 12.8 points. It compares a
+  method that shortens its descriptions with a control that lengthens them, which the recall
+  shortcut above already discounts.
+- **The other rows are confirmed.** The unmodified model, REVIS and the VTI control never loop,
+  and two VTI control descriptions reach the limit in ordinary prose.
+
+### Why REVIS behaves so on LLaVA-OneVision-1.5-8B
+
+The port follows the official code at commit `75f4d29`, as on LLaVA-1.5-7B. Here the vectors are
+computed by the recipe and not released, and the calibration selects block 21 with a threshold of
+-0.073. The gate therefore opens wherever the cosine between the residual stream and the vector is
+below 0.073. The readings below come from the output of block 21 before the vector is added, which
+the steering cannot change. They were taken from a pass without steering, and for CHAIR from the
+descriptions of each condition read again.
+
+- **The gate sits at the edge of the states it reads.** At the last token of a POPE question the
+  cosine is 0.066 with a standard deviation of 0.007, so the gate opens on 86% of the questions,
+  83% of those whose answer is yes and 90% of those whose answer is no. MME questions end in
+  "Please answer yes or no.", which raises the cosine to 0.092, and the gate opens on 2 of their
+  2374. In the prompt it opens on 2% of the image tokens and 19% of the other tokens of POPE. In
+  CHAIR it opens at the first token of every description and at about 30% of the later ones,
+  under every condition.
+- **The vector is orthogonal to the answer.** At block 21 its cosine with the difference between
+  the mean states of the questions answered yes and answered no is 0.001, and its cosine with the
+  difference of the output rows of yes and no is -0.011. At strength 2.5 it has a norm of 89
+  against 117 for the stream at the last token, which is the shift of 0.64. Read directly by the
+  final normalization and the output head, it would lower the log odds of yes by 2.4. After the
+  remaining fourteen blocks the log odds move by 0.21 at the median on the first 50 images. On
+  the whole of POPE adversarial, 27 of 3000 answers change, 16 from yes to no and 11 from no to
+  yes, 15 to the right answer and 12 to the wrong one, so the yes ratio stays put.
+- **A stronger vector breaks the answer before it moves it.** On the first 50 images, strength 10
+  flips 64 of 300 first tokens and strength 25 flips 121, mostly to tokens that are neither yes
+  nor no, such as "...", "-" and a blank line. Accuracy falls from 0.877 to 0.743 and then to
+  0.560. The vector carries no direction that turns a yes into a no, at any strength.
+- **REVIS shortens the descriptions it gates.** The descriptions of REVIS run to 123 tokens against
+  176, with a gate open at their first token and at a third of the others, and name fewer
+  objects. This is the recall shortcut above. Only 1.9 points of CHAIR_S are beyond it.
+- **The sign of the vectors is consistent from block 15 upward.** Every computed visual vector has
+  a cosine between 0.45 and 0.94 with the one of the index below from hidden state index 16 to 36.
+  Below index 16 the sign alternates, which the calibration never reaches. Unlike the vectors
+  released for LLaVA-1.5-7B, no flip lies near the selected block. Each vector is the first
+  principal component of samples that PCA centers, so it follows the variance of what the image
+  adds to a description and not its mean. At index 22 its cosine with that mean is -0.12.
+- **The gate of the control is always open.** The cosine of a random vector with any state has a
+  standard deviation of 1 over the square root of 4096, which is 0.016, so it is always below
+  0.073. The control adds a vector of norm 89 at every position, image tokens included, on every
+  task. It changes 77 POPE answers, 66 of them from yes to no, and 97 of the 2374 MME answers.
+- **The long descriptions of the control drift and do not loop.** 186 of its 500 descriptions run
+  to the token limit of 512, but none of them ends in a repeated word or phrase. They leave the
+  image and continue as essays, for instance "the image serves as a reminder of the power of
+  photography".
 
 ### Where a wrong yes comes from
 
@@ -698,75 +866,67 @@ deeper also in the share of their layers, and their wrong yeses do not lean on t
 of the question that those of LLaVA-1.5-7B lean on, so a layer chosen on LLaVA-1.5-7B does not
 fall on the same step of these two.
 
-### Sparse autoencoders on four blocks
+### The answers of LLaVA-OneVision-1.5-8B item by item, and the yes or no instruction
 
-`swce-sae` trained TopK autoencoders of 32768 latents, with 64 kept per state, on blocks 9, 13,
-24 and 30, two seeds per block. Blocks 9 and 13 are where the probes and the lens first read the
-answer, and 24 and 30 are a late block and the block of REVIS `table-11`. They trained on 6.1
-million states from COCO train2014 only: the 5000 Nullu descriptions, the 5952 REVIS
-calibration questions and 256 descriptions the model wrote itself, in three passes, on one
-NVIDIA A100-SXM4-80GB with the locked environment. The checks below were fixed before training.
-The two readings ran on the 3000 questions of POPE adversarial and the checks on 1000 held-out
-sequences.
+The item analysis of LLaVA-1.5-7B, with `swce-diagnose --items`, on the answers of the main
+experiment of `llava-onevision-1.5-8b`, and its POPE tasks asked again with "Please answer yes or
+no." appended, `pope-adversarial-yn` and `repope-adversarial-yn`, with `swce-evaluate`. The
+evaluation ran on one RTX 4090, the card of the main run, with Python 3.13.13, PyTorch
+2.14.1+cu126, transformers 5.23.0, bfloat16 and seed zero. Its scores are in
+`results/leaderboard.csv`.
 
-| Block | 9 | 13 | 24 | 30 |
+**The answers item by item.**
+
+- **The objects most hallucinated are again small things that fit many scenes, at lower rates.**
+  Among absent objects asked about 20 times or more, the unmodified model says yes to 33% of
+  trucks, 32% of handbags, 23% of backpacks, 17% of bottles and 13% of chairs, against 10% of
+  dining tables and 3% of cars. The rate of an object rises with its co-occurrence with the
+  objects of the image, with a Spearman correlation of 0.24 across objects and 0.12 across
+  questions, against 0.30 and 0.22 on LLaVA-1.5-7B.
+- **VTI moves answers toward yes, the other way from LLaVA-1.5-7B.** It turns 48 correct noes into
+  wrong yeses and fixes none, and fixes 34 misses while breaking 5. Its random control does the
+  same, less, breaking 19 correct noes and fixing 22 misses. On LLaVA-1.5-7B, VTI at its POPE
+  setting moves answers toward no.
+- **REVIS barely moves POPE, and its control moves it more.** REVIS fixes 16 answers and breaks 12.
+  Its control fixes 33 wrong yeses and breaks 39 correct yeses.
+- **RePOPE helps OneVision more than LLaVA-1.5-7B.** Of the 388 errors of the unmodified model, 122
+  are on relabelled questions. Removing the ambiguous questions raises the F1 from 0.866 to 0.889,
+  and the new labels bring it to 0.914. On LLaVA-1.5-7B the new labels lower it, from 0.811 to
+  0.805, so OneVision agrees with the corrected labels where LLaVA-1.5-7B does not.
+- **Every method moves the first answer token and almost no answer.** VTI moves the probability
+  of the first token of 94% of the POPE answers, REVIS of 93% and their controls of 91% and 96%,
+  and each changes at most 3% of the answers. REVIS acts at block 21 here, where its gate is open
+  at the last prompt token, unlike REVIS at block 31 on LLaVA-1.5-7B.
+- **No method costs a subtask of MME about objects.** On existence, count, position and color,
+  every method is within 5 points of the unmodified model, where VTI at its POPE setting loses 70
+  points on count on LLaVA-1.5-7B.
+
+**The yes or no instruction.**
+
+| F1 | POPE as written | POPE, yes or no | RePOPE as written | RePOPE, yes or no |
 |---|---|---|---|---|
-| Unexplained variance at the end of training | 6.1% | 9.3% | 13.2% | 15.0% |
-| Held out, image tokens of the descriptions | 6.4% | 9.6% | 17.4% | 21.9% |
-| Held out, description text | 18.5% | 18.0% | 14.2% | 15.1% |
-| Latents that never fire on the held-out states | 3.5% | 0.5% | 0% | 0% |
-| Next token loss on the descriptions, from 1.220 nats | +0.059 | +0.069 | +0.094 | +0.158 |
-| Latents of one seed matched by the other above a cosine of 0.7 | 2.1% | 1.9% | 3.1% | 2.7% |
-| Best single latent for a hallucinated yes, AUROC on the held-out half | 0.79 | 0.87 | 0.87 | 0.87 |
+| Unmodified | 0.866 | 0.866 | 0.914 | 0.917 |
+| VTI | 0.863 | 0.866 | 0.908 | 0.915 |
+| VTI control | 0.869 | 0.867 | 0.916 | 0.920 |
+| REVIS | 0.867 | 0.865 | 0.916 | 0.916 |
+| REVIS control | 0.862 | 0.868 | 0.915 | 0.921 |
 
-Both seeds give the same figures to within a few tenths of a point.
+- **The instruction leaves the unmodified model where it was.** Its F1 stays at 0.866, its AUROC
+  at 0.942, its yes ratio goes from 0.462 to 0.450 and d' from 2.29 to 2.35. It still answers
+  with a sentence that begins with yes or no.
+- **With the instruction, no method changes POPE.** No F1 moves by more than 0.003 on either label
+  set, every McNemar p is 0.26 or more, and no yes ratio moves by more than 0.005.
+- **The instruction removes the push of VTI toward yes.** Asked as written, VTI raises the yes
+  ratio by 0.026 and lowers d' by 0.09. With the instruction it changes the yes ratio by 0.001
+  and d' by -0.01 [-0.05, +0.04], and it fixes 21 answers and breaks 22, with no direction.
+- LLaVA-1.5-7B has not yet been asked the variant, which is issue #37, so this part has no
+  reading on that model to set against.
 
-- **Reconstruction passes.** The autoencoders keep most of the variance of every kind of token
-  and cost under 0.16 nats of next-token loss when they replace a block. Description text is the
-  hardest at the early blocks and image tokens at the late ones.
-- **Replication across seeds fails.** Only 2 to 3% of the latents of one seed have a match
-  above a cosine of 0.7 in the other, and the median best match is 0.21 to 0.28. Autoencoders of
-  this size trained on hundreds of millions of tokens usually share most of their latents. Six
-  million are too few for the dictionary to settle. Each latent is one solution among many, and
-  none can be named as a feature of the model. The latents the readings below name replicate no
-  better. The readings are therefore stated only where both seeds agree, as patterns, and no
-  latent is interpreted.
-- **The position of the answer is poorly described.** The checks measure the unexplained
-  variance across the 3000 questions at that one position, where the states differ little. It is
-  57% at block 9 and 21 to 29% after it, so what separates one question from another there is
-  only partly in the latents.
-- **The steered states fall outside the dictionary.** At the position of the answer, the
-  unexplained variance under VTI is 10 times that of the unmodified model at block 9 and 2.8 to 4.4
-  times at the later blocks. Under REVIS at block 30 it is 34 to 37 times. Both methods put the stream
-  where the model itself never goes. This agrees with the probes, which found the unmodified
-  probe failing under both, and limits what any reading through these autoencoders can say about
-  them. REVIS at block 31 leaves every state of these blocks as it was, as its gate stays shut at
-  that position.
-- **VTI's direction is not sparse in the dictionary.** At every block the ten latents closest to
-  its direction explain 40 to 47% of it and fifty explain 57 to 72%, and no latent has a cosine
-  above 0.50 with it. The ten latents whose activation it changes most carry 19 to 26% of its
-  total change. At blocks 9 and 13 they all fall, with decoder rows nearly orthogonal to its
-  direction, which is what renormalizing the stream after a shift does to everything else in it.
-  At blocks 24 and 30 the latents that rise are the ones aligned with its direction. The
-  direction of the block itself explains little of what VTI does to it there, with a cosine of
-  0.17 at block 9 against 0.57 to 0.64 at blocks 24 and 30, since earlier blocks are shifted too.
-- **The stream separates a hallucinated yes from a correct one.** Among the 1851 questions the
-  unmodified model answers yes, 507 hallucinate. Single latents chosen on half the images tell
-  them apart with an AUROC of 0.87 on the other half from block 13 on, and 0.79 at block 9, in
-  both seeds. Their decoder rows have cosines of 0.3 to 0.6 with the difference of the mean states
-  of the two groups, which uses no autoencoder. So at the moment it says yes the model often
-  holds the evidence that the object is absent, as the probes suggested.
-- **VTI moves the same latents, mostly away from correct answers.** Many of the latents VTI
-  changes most are also among those that best separate the two kinds of yes, at every block and
-  in both seeds. It mostly lowers the ones that are higher when the yes is correct, which is
-  consistent with VTI damping the evidence for yes rather than sharpening it, and with the d'
-  it lowers. Most of these latents fire on every question, so they are the directions of largest
-  variance at that position, and the overlap may come from that alone.
-
-These readings are correlational. Removing a latent and watching the answers would test whether
-it matters, and needs autoencoders that replicate first, so a longer training. The trained
-autoencoders, their curves and the tables of these checks are kept with the data and are not
-committed.
+**What holds on both models.** Co-occurrence predicts which absent objects are hallucinated, and
+the same kinds of object are hallucinated most. No method improves POPE beyond its random
+control. VTI moves the first answer token of most questions of POPE while changing few answers.
+What differs is the direction VTI pushes the answers, toward no on LLaVA-1.5-7B and toward yes on
+OneVision, and that the corrected labels of RePOPE help OneVision and not LLaVA-1.5-7B.
 
 ### Qwen3-VL-8B
 
@@ -986,3 +1146,73 @@ model of its architecture, on POPE, RePOPE, CHAIR and MME, at the defaults of th
 - The fitting of Nullu was not rehearsed, since it reads 5000 images.
 - Qwen3-VL was exercised as a small random model without its processor, and LLaVA-OneVision-1.5
   was not exercised at all, since its model code cannot be built without downloading it.
+
+### Sparse autoencoders on four blocks
+
+`swce-sae` trained TopK autoencoders of 32768 latents, with 64 kept per state, on blocks 9, 13,
+24 and 30, two seeds per block. Blocks 9 and 13 are where the probes and the lens first read the
+answer, and 24 and 30 are a late block and the block of REVIS `table-11`. They trained on 6.1
+million states from COCO train2014 only: the 5000 Nullu descriptions, the 5952 REVIS
+calibration questions and 256 descriptions the model wrote itself, in three passes, on one
+NVIDIA A100-SXM4-80GB with the locked environment. The checks below were fixed before training.
+The two readings ran on the 3000 questions of POPE adversarial and the checks on 1000 held-out
+sequences.
+
+| Block | 9 | 13 | 24 | 30 |
+|---|---|---|---|---|
+| Unexplained variance at the end of training | 6.1% | 9.3% | 13.2% | 15.0% |
+| Held out, image tokens of the descriptions | 6.4% | 9.6% | 17.4% | 21.9% |
+| Held out, description text | 18.5% | 18.0% | 14.2% | 15.1% |
+| Latents that never fire on the held-out states | 3.5% | 0.5% | 0% | 0% |
+| Next token loss on the descriptions, from 1.220 nats | +0.059 | +0.069 | +0.094 | +0.158 |
+| Latents of one seed matched by the other above a cosine of 0.7 | 2.1% | 1.9% | 3.1% | 2.7% |
+| Best single latent for a hallucinated yes, AUROC on the held-out half | 0.79 | 0.87 | 0.87 | 0.87 |
+
+Both seeds give the same figures to within a few tenths of a point.
+
+- **Reconstruction passes.** The autoencoders keep most of the variance of every kind of token
+  and cost under 0.16 nats of next-token loss when they replace a block. Description text is the
+  hardest at the early blocks and image tokens at the late ones.
+- **Replication across seeds fails.** Only 2 to 3% of the latents of one seed have a match
+  above a cosine of 0.7 in the other, and the median best match is 0.21 to 0.28. Autoencoders of
+  this size trained on hundreds of millions of tokens usually share most of their latents. Six
+  million are too few for the dictionary to settle. Each latent is one solution among many, and
+  none can be named as a feature of the model. The latents the readings below name replicate no
+  better. The readings are therefore stated only where both seeds agree, as patterns, and no
+  latent is interpreted.
+- **The position of the answer is poorly described.** The checks measure the unexplained
+  variance across the 3000 questions at that one position, where the states differ little. It is
+  57% at block 9 and 21 to 29% after it, so what separates one question from another there is
+  only partly in the latents.
+- **The steered states fall outside the dictionary.** At the position of the answer, the
+  unexplained variance under VTI is 10 times that of the unmodified model at block 9 and 2.8 to 4.4
+  times at the later blocks. Under REVIS at block 30 it is 34 to 37 times. Both methods put the stream
+  where the model itself never goes. This agrees with the probes, which found the unmodified
+  probe failing under both, and limits what any reading through these autoencoders can say about
+  them. REVIS at block 31 leaves every state of these blocks as it was, as its gate stays shut at
+  that position.
+- **VTI's direction is not sparse in the dictionary.** At every block the ten latents closest to
+  its direction explain 40 to 47% of it and fifty explain 57 to 72%, and no latent has a cosine
+  above 0.50 with it. The ten latents whose activation it changes most carry 19 to 26% of its
+  total change. At blocks 9 and 13 they all fall, with decoder rows nearly orthogonal to its
+  direction, which is what renormalizing the stream after a shift does to everything else in it.
+  At blocks 24 and 30 the latents that rise are the ones aligned with its direction. The
+  direction of the block itself explains little of what VTI does to it there, with a cosine of
+  0.17 at block 9 against 0.57 to 0.64 at blocks 24 and 30, since earlier blocks are shifted too.
+- **The stream separates a hallucinated yes from a correct one.** Among the 1851 questions the
+  unmodified model answers yes, 507 hallucinate. Single latents chosen on half the images tell
+  them apart with an AUROC of 0.87 on the other half from block 13 on, and 0.79 at block 9, in
+  both seeds. Their decoder rows have cosines of 0.3 to 0.6 with the difference of the mean states
+  of the two groups, which uses no autoencoder. So at the moment it says yes the model often
+  holds the evidence that the object is absent, as the probes suggested.
+- **VTI moves the same latents, mostly away from correct answers.** Many of the latents VTI
+  changes most are also among those that best separate the two kinds of yes, at every block and
+  in both seeds. It mostly lowers the ones that are higher when the yes is correct, which is
+  consistent with VTI damping the evidence for yes rather than sharpening it, and with the d'
+  it lowers. Most of these latents fire on every question, so they are the directions of largest
+  variance at that position, and the overlap may come from that alone.
+
+These readings are correlational. Removing a latent and watching the answers would test whether
+it matters, and needs autoencoders that replicate first, so a longer training. The trained
+autoencoders, their curves and the tables of these checks are kept with the data and are not
+committed.

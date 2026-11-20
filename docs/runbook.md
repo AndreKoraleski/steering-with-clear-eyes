@@ -145,7 +145,8 @@ and fits a probe of the expected answer on every block, with five folds over ima
 whole task it reads 3000 questions per method setting, about a forward pass each, and holds
 their states in memory, about 1.6 GB per setting for LLaVA-1.5. The probes of every block are
 fitted together on the GPU, which takes minutes, and on the processor when there is no GPU,
-which takes hours.
+which takes hours. The model waits on the processor while they are fitted, so a 24 GB card
+holds them beside an 8B model.
 
 ```bash
 uv run swce-diagnose --probe --subject swce.models:llava_15 methods/vti.py:build methods/vti.py:control methods/revis.py:build methods/revis.py:control --task pope-adversarial --limit 0

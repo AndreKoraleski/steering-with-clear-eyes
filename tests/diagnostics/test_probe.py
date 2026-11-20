@@ -1,3 +1,6 @@
+from collections.abc import Iterator
+from contextlib import contextmanager, nullcontext
+from importlib import import_module
 from pathlib import Path
 
 import numpy as np
@@ -11,7 +14,11 @@ from support import ToySubject, tiny_registry
 
 from swce.baselines import RandomDirection
 from swce.diagnostics import probe, probe_task, write_probes
-from swce.diagnostics.probe import Probes
+from swce.diagnostics.probe import Probes, released
+from swce.models.subject import Subject
+
+# The package exports a function named `probe`, which hides the module of the same name.
+probe_module = import_module("swce.diagnostics.probe")
 
 
 def states_with_signal(
@@ -101,3 +108,44 @@ def test_probe_task_reads_every_method_and_writes_one_file(tmp_path: Path) -> No
     (written,) = write_probes(probes, tmp_path / "results")
     assert written == tmp_path / "results" / "diagnostics" / "toy" / "probe-pope-tiny.csv"
     assert len(pd.read_csv(written)) == len(probes)
+
+
+def test_released_holds_the_modules_on_the_processor_and_puts_them_back(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    subject = ToySubject()
+    subject.head.to("meta")
+    moves: list[str] = []
+    monkeypatch.setattr(subject.head, "to", lambda device: moves.append(str(device)))
+    with released(subject):
+        assert moves == ["cpu"]
+    assert moves == ["cpu", "meta"]
+    with pytest.raises(RuntimeError), released(subject):
+        raise RuntimeError
+    assert moves == ["cpu", "meta", "cpu", "meta"]
+
+
+def test_probe_task_gives_the_same_probes_whether_the_model_is_released(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry = tiny_registry(tmp_path / "host")
+    control = RandomDirection(norms={1: 5.0}, width=ToySubject().width)
+
+    def run() -> pd.DataFrame:
+        return probe_task(
+            ToySubject(), [control], "pope-tiny", folds=2, data=tmp_path / "data", registry=registry
+        )
+
+    calls: list[Subject] = []
+
+    @contextmanager
+    def counted(subject: Subject) -> Iterator[None]:
+        calls.append(subject)
+        with released(subject):
+            yield
+
+    monkeypatch.setattr(probe_module, "released", counted)
+    with_release = run()
+    assert len(calls) == 1
+    monkeypatch.setattr(probe_module, "released", lambda subject: nullcontext())
+    pd.testing.assert_frame_equal(with_release, run())

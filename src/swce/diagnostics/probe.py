@@ -21,7 +21,8 @@ The probes of every block are fitted together with PyTorch, on the GPU when ther
 """
 
 import fnmatch
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from pathlib import Path
 
 import numpy as np
@@ -30,7 +31,7 @@ import torch
 import torch.nn.functional as F  # noqa: N812
 from numpy.typing import NDArray
 from sklearn.model_selection import GroupKFold
-from torch import Tensor
+from torch import Tensor, nn
 from tqdm import tqdm
 
 from swce.baselines.reference import Unmodified
@@ -101,6 +102,38 @@ def collect(
 def default_device() -> torch.device:
     """The first GPU when there is one, else the processor."""
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+@contextmanager
+def released(subject: Subject) -> Iterator[None]:
+    """Hold the modules of a subject on the processor, and put them back where they were after.
+
+    The probes of one fold are fitted in double precision on the states of every block, which on
+    a 24 GB GPU do not fit beside an 8B model. Once every state is read the model is not needed,
+    so it waits on the processor while the probes are fitted, and the probes stay on the GPU.
+
+    Args:
+        subject: Model whose module attributes are moved. A module whose parameters lie on
+            several devices is left where it is, since one move could not put it back.
+    """
+    moved: list[tuple[nn.Module, torch.device]] = []
+    for module in vars(subject).values():
+        if not isinstance(module, nn.Module):
+            continue
+        devices = {tensor.device for tensor in [*module.parameters(), *module.buffers()]}
+        if len(devices) != 1:
+            continue
+        (device,) = devices
+        if device.type != "cpu":
+            module.to("cpu")
+            moved.append((module, device))
+    if moved and torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    try:
+        yield
+    finally:
+        for module, device in moved:
+            module.to(device)
 
 
 class Probes:
@@ -296,8 +329,12 @@ def probe_task(
     folds: int = FOLDS,
     data: Path | None = None,
     registry: Registry | None = None,
+    device: torch.device | None = None,
 ) -> pd.DataFrame:
     """Probes of the unmodified model and of every method on the items of a task.
+
+    Once every state is read, the modules of the subject wait on the processor while the probes
+    are fitted, and are put back after, so that the probes have the GPU to themselves.
 
     Args:
         subject: Model to observe.
@@ -307,6 +344,7 @@ def probe_task(
         folds: Number of folds of the cross-validation over images.
         data: Data root, or None for the default one.
         registry: Registry defining the task, or None for the committed one.
+        device: Device the probes are fitted on, or None for the first GPU when there is one.
 
     Returns:
         The rows of `probe` for every setting, with its `model`, `method`, `setting`,
@@ -316,9 +354,9 @@ def probe_task(
         subject, steerers, task, limit=limit, data=data, registry=registry
     )
     unmodified = states[0][1]
-    found = probe_settings(
-        unmodified, [steered for _, steered in states[1:]], positive, groups, folds=folds
-    )
+    steered = [read for _, read in states[1:]]
+    with released(subject):
+        found = probe_settings(unmodified, steered, positive, groups, folds=folds, device=device)
     frames = []
     for (setting, _), frame in zip(states, found, strict=True):
         frames.append(
