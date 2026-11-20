@@ -2,6 +2,7 @@ import importlib.util
 from collections.abc import Callable
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+from typing import Any
 
 import pytest
 import torch
@@ -18,6 +19,7 @@ from swce.models.hf import (
     onevision_buffers,
     onevision_code,
     onevision_config,
+    qwen3_vl_8b,
     require_every_weight,
     require_finite_buffers,
 )
@@ -182,6 +184,46 @@ def test_a_model_with_a_buffer_that_is_not_finite_is_refused() -> None:
     model.get_buffer("inv_freq")[1] = float("nan")
     with pytest.raises(RuntimeError, match="inv_freq"):
         require_finite_buffers(model, "broken")
+
+
+@pytest.mark.parametrize(
+    "problem", [None, "missing_keys", "unexpected_keys", "mismatched_keys", "nonfinite"]
+)
+def test_qwen_factory_checks_loading_before_returning(
+    monkeypatch: pytest.MonkeyPatch, problem: str | None
+) -> None:
+    from transformers import AutoProcessor, Qwen3VLForConditionalGeneration
+
+    model = tiny_qwen().model
+    processor = object()
+    loading: dict[str, list[str]] = {}
+    if problem is not None and problem != "nonfinite":
+        loading[problem] = ["broken.weight"]
+    if problem == "nonfinite":
+        model.register_buffer("broken_buffer", torch.tensor(float("inf")), persistent=False)
+
+    def load_processor(checkpoint: str, **kwargs: Any) -> object:
+        assert (checkpoint, kwargs["revision"]) == QWEN3_VL
+        return processor
+
+    def load_model(checkpoint: str, **kwargs: Any) -> tuple[nn.Module, dict[str, list[str]]]:
+        assert (checkpoint, kwargs["revision"]) == QWEN3_VL
+        assert kwargs["dtype"] is torch.bfloat16
+        assert kwargs["output_loading_info"] is True
+        return model.to(dtype=torch.bfloat16), loading
+
+    monkeypatch.setattr(AutoProcessor, "from_pretrained", load_processor)
+    monkeypatch.setattr(Qwen3VLForConditionalGeneration, "from_pretrained", load_model)
+    if problem is None:
+        subject = qwen3_vl_8b(device="cpu")
+        assert subject.processor is processor
+        assert subject.dtype is torch.bfloat16
+        assert subject.seed == 0
+        assert not subject.fixed_grid
+    else:
+        match = "broken_buffer" if problem == "nonfinite" else problem
+        with pytest.raises(RuntimeError, match=match):
+            qwen3_vl_8b(device="cpu")
 
 
 class RiceRotaryEmbedding(nn.Module):

@@ -25,6 +25,39 @@ A method that cannot be instantiated on a model as its paper describes raises
 Every model generates with these settings, unchanged, and the random state is seeded before every
 generation. Answers of Qwen3-VL therefore depend on the seed, which is zero.
 
+### Attention runtime and Qwen3-VL H100 validation
+
+`HuggingFaceSubject.__init__` calls `torch.backends.cuda.enable_cudnn_sdp(False)` for every
+wrapped model. There is no job-specific opt-in; the process-wide flag remains active for
+baseline, methods, controls, fitting, calibration and diagnostics. The native preflight
+reference applies it explicitly because it does not construct a subject. This changes neither
+checkpoint generation settings nor prompts, precision, image budget, seeds or token limits.
+`settings()` reads the actual `cudnn_sdp_enabled()` flag into each run's environment metadata.
+Only cuDNN SDPA is disabled, not general cuDNN or the other attention backends.
+
+This is an **environment-specific execution departure**, not a method hyperparameter. The
+initial exact forty-question gate failed on 7 answers (job 37600). Subsequent diagnostics found
+equal inputs and initial RNG states but varying raw logits, including reference self-repeats.
+Disabling only cuDNN SDPA in diagnostic 37609 restored 40/40 exact tokens and all per-step
+logits for sampled/greedy reference-versus-SWCE and same-model/fresh-load reference repeats.
+General cuDNN and the other SDPA backends stayed enabled. No replacement kernel was profiled
+in that ablation; no universal determinism or kernel-internal root cause is claimed.
+
+Measured environment: NVIDIA H100 80 GB on `dgx-H100-02`, driver 580.159.03, Python 3.13.18,
+PyTorch 2.14.1+cu130 (CUDA 13.0), torchvision runtime 0.29.2+cu132, transformers 5.23.0;
+`Qwen/Qwen3-VL-8B-Instruct` revision `0c351dd01ed87e9c1b53cbc748cba10e6187ff3b`.
+Before the constructor refactoring, the integrated opt-in preflight passed **40/40 exact
+answer records** in job **37614**
+(2min17s, exit 0:0), with equal generation configurations and effective attention flags.
+It stopped before smoke, fitting or evaluation. The production gate compares full decoded text
+and token counts, not raw logits; the full-logit measurements above belong to diagnostic 37609.
+No full Qwen results are being reported. The constructor refactoring broadens the default to
+all wrapped models; it passed the real 40/40 preflight in job 37619. That job stopped during
+REVIS vector fitting, before evaluation, because the processor rejected an empty-image prompt.
+The tokenizer compatibility fix is described below. Do not treat historical LLaVA results as
+newly evaluated under this policy. The [H100 guide](qwen3-h100.md) documents isolation and the
+preflight-only default.
+
 ### Loading LLaVA-OneVision-1.5
 
 The checkpoint ships model code written for `transformers` 4.53, which the pinned version of the
@@ -146,6 +179,11 @@ Official code at commit `75f4d29`. Two steps, `compute_vectors` and `calibrate`.
   still holds its image placeholder through the processor. Recent versions of the library
   refuse that, where the version the official code was written for tokenized the text. The
   tokenizer is called directly here.
+- The Qwen3 branch likewise retains an empty image entry, the question "Describe this image."
+  and an assistant-generation suffix for these descriptions. Job 37619 exposed the same
+  processor rejection for `<|image_pad|>`. Without an image, the identical chat template is now
+  rendered with `tokenize=False` and passed directly to the tokenizer. No marker, question or
+  suffix is removed; calls with a real image continue through the multimodal processor.
 - The official calibration script imports a class that current versions of `transformers`
   removed, so it does not run as distributed with the version pinned here.
 
@@ -193,7 +231,7 @@ images. Its scores are in `results/leaderboard.csv`.
   lowers the F1 to 0.787 on POPE adversarial and to 0.770 on RePOPE. It ran later on the same
   kind of card, after a calibration that gave block 31 the same threshold to the last digit.
 - LLaVA-OneVision-1.5-8B ran the same experiment at the `code-default` settings, below.
-- Qwen3-VL has not been run.
+- Qwen3-VL has run preflight/diagnostic checks only, not the full experiment.
 
 ### Why REVIS behaves so on LLaVA-1.5-7B
 

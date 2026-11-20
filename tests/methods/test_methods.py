@@ -1,7 +1,8 @@
 import importlib.util
 import json
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
+from typing import Any
 
 import pytest
 import torch
@@ -328,6 +329,66 @@ def test_revis_principal_direction_and_its_special_cases() -> None:
     assert abs(F.normalize(direction, dim=0)[0].item()) > 0.95
     assert torch.equal(revis.principal(samples[:1]), samples[0])
     assert torch.equal(revis.principal(torch.ones(5, 4)), torch.zeros(4))
+
+
+@pytest.mark.parametrize("with_image", [False, True])
+@pytest.mark.parametrize(
+    "answer", ["A faithful caption.", "A hallucinated caption.", revis.UNKNOWN[0]]
+)
+def test_revis_qwen_preserves_empty_image_prompt_without_multimodal_tokenization(
+    with_image: bool, answer: str
+) -> None:
+    image = IMAGE if with_image else None
+    prompt = "<|vision_start|><|image_pad|><|vision_end|> preserved template"
+    encoded = {"input_ids": torch.tensor([[1, 2, 3]])}
+    calls: list[str] = []
+
+    def template(messages: list[dict[str, Any]], **kwargs: Any) -> Any:
+        assert messages == [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": image},
+                    {
+                        "type": "text",
+                        "text": revis.QUESTION if with_image else "Describe this image.",
+                    },
+                ],
+            },
+            {"role": "assistant", "content": [{"type": "text", "text": answer}]},
+        ]
+        assert kwargs["add_generation_prompt"] is True
+        assert kwargs["tokenize"] is with_image
+        calls.append("template")
+        if with_image:
+            assert kwargs["return_dict"] is True and kwargs["return_tensors"] == "pt"
+            return encoded
+        return prompt
+
+    def tokenize(texts: list[str], **kwargs: Any) -> dict[str, torch.Tensor]:
+        assert not with_image and texts == [prompt]
+        assert kwargs == {"return_tensors": "pt", "padding": True}
+        calls.append("tokenizer")
+        return encoded
+
+    states = torch.arange(24).reshape(2, 3, 4)
+
+    def moved(inputs: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+        assert inputs is encoded
+        return inputs
+
+    def all_states(inputs: dict[str, torch.Tensor]) -> torch.Tensor:
+        assert inputs is encoded
+        return states
+
+    subject = SimpleNamespace(
+        name="qwen3-vl-8b",
+        processor=SimpleNamespace(apply_chat_template=template, tokenizer=tokenize),
+        moved=moved,
+        all_states=all_states,
+    )
+    assert torch.equal(revis._states(subject, revis.QUESTION, answer, image), states[:, -1])
+    assert calls == (["template"] if with_image else ["template", "tokenizer"])
 
 
 def test_revis_visual_vector_is_free_of_the_language_prior() -> None:
