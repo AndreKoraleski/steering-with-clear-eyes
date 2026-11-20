@@ -889,6 +889,34 @@ condition is compared with the unmodified model on the images where neither brea
   block 35 can change. The unmodified probe there stays at 0.951 under REVIS and falls to 0.771
   under its control.
 
+### The answers item by item, Qwen3-VL-8B
+
+From the answers of run `job-37620`, with `swce-diagnose --items`, read beside those of
+LLaVA-1.5-7B above. A POPE answer here is the one the official parser reads, so the REVIS control
+inherits the artefact of its bold negations.
+
+- **The objects most hallucinated are again small things that fit many scenes.** Among absent
+  objects asked about 20 times or more, the unmodified model says yes to 54% of handbags, 43% of
+  backpacks, 31% of chairs, 27% of cups and 21% of bottles, against 6% of dining tables and cars
+  and none of tvs. The rate rises with the co-occurrence of the object with those of the image,
+  with a Spearman correlation of 0.22 across objects and 0.19 across questions. This holds on
+  both models, at lower rates here.
+- **VTI moves answers toward yes, the opposite of LLaVA-1.5-7B.** It breaks 160 correct noes and
+  fixes 2, and fixes 56 misses while breaking 1. Its control does the same at 47 and 15. REVIS
+  fixes 13 and breaks 18 in all. The REVIS control breaks 890 correct noes, which the parser
+  reads as yes from "**not**", and fixes 107 misses.
+- **RePOPE changes the level and not the ranking.** It removes 316 questions and relabels 172.
+  Of the 389 errors of the unmodified model, 122 are on relabelled questions. Removing the
+  ambiguous questions raises the F1 from 0.871 to 0.887 and the new labels bring it to 0.912. The
+  five conditions keep their order on both label sets. This holds on both models.
+- **A method that acts after the first token cannot change a yes or no answer.** REVIS moves the
+  probability of yes by more than 0.001 on 34% of the POPE questions, changes the text of 98% of
+  the answers and the answer of 1%. VTI moves it on 32% and changes 7% of the answers. This holds
+  on both models.
+- **The capability cost is not in counting.** On the object subtasks of MME, VTI and its control
+  move each by at most 5 points, and REVIS loses 18 on position. On LLaVA-1.5-7B, VTI at its POPE
+  setting lost 70 points on count. This does not hold across models.
+
 ### Comparison with published results, Qwen3-VL-8B
 
 The Qwen3-VL technical report, arXiv 2511.21631v2, reports neither MME, POPE nor CHAIR for any
