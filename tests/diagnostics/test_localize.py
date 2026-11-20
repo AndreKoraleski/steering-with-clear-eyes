@@ -471,7 +471,44 @@ def test_encoder_regions_task_reads_boxes_and_margins(monkeypatch: pytest.Monkey
     assert not frame.isna().any().any()
 
 
-def test_region_features_reject_merged_encoder_layout() -> None:
+@pytest.mark.parametrize("rows, columns", [(2, 2), (4, 6), (6, 4)])
+def test_qwen_region_tokens_match_every_block(rows: int, columns: int) -> None:
+    from tiny import tiny_qwen
+
+    from swce.diagnostics.attention import ResizedGrid
+    from swce.diagnostics.encoder import _image_features, region_features
+
+    subject = tiny_qwen()
+    inputs = tiny_inputs(subject)
+    inputs["image_grid_thw"] = torch.tensor([[1, rows, columns]])
+    inputs["pixel_values"] = torch.randn(rows * columns, 3 * 2 * 14 * 14)
+    grid = ResizedGrid.of(subject, inputs)
+    tokens, projected_tokens = _image_features(subject, inputs, lambda state, source: state)
+    cells = grid.cells(columns * 14, rows * 14, [0, 0, columns * 14, rows * 14])
+    pooled, projected = region_features(subject, inputs, [cells], grid)
+    assert tokens.shape[:2] == (3, rows * columns)
+    torch.testing.assert_close(pooled[0], tokens.mean(dim=1))
+    assert projected is not None and projected_tokens is not None
+    assert projected_tokens.shape[0] == rows * columns // 4
+    torch.testing.assert_close(projected[0], projected_tokens.mean(dim=0))
+
+
+def test_merged_region_indices_follow_processor_order() -> None:
+    from transformers.models.qwen2_vl.image_processing_qwen2_vl import Qwen2VLImageProcessor
+
+    from swce.diagnostics.encoder import _merged_region_indices
+
+    pixels = torch.arange(24).reshape(1, 1, 4, 6)
+    patches, rows, columns = Qwen2VLImageProcessor().patchify(pixels, 1, 2, 1)
+    assert (rows, columns) == (4, 6)
+    assert _merged_region_indices([[1], [3, 5]], 2, 0) == [
+        [4, 5, 6, 7],
+        [12, 13, 14, 15, 20, 21, 22, 23],
+    ]
+    assert patches[0, [4, 5, 6, 7], 0].tolist() == [2, 3, 8, 9]
+
+
+def test_qwen_one_cell_pools_constructed_patch_tokens() -> None:
     from tiny import tiny_qwen
 
     from swce.diagnostics.attention import ResizedGrid
@@ -479,5 +516,116 @@ def test_region_features_reject_merged_encoder_layout() -> None:
 
     subject = tiny_qwen()
     inputs = tiny_inputs(subject)
-    with pytest.raises(ValueError, match="merged patches"):
-        region_features(subject, inputs, [[0]], ResizedGrid.of(subject, inputs))
+    inputs["image_grid_thw"] = torch.tensor([[1, 4, 6]])
+    inputs["pixel_values"] = torch.zeros(24, 3 * 2 * 14 * 14)
+    state = torch.arange(24 * 16, dtype=torch.float32).reshape(24, 16)
+    projected_state = torch.arange(6 * 16, dtype=torch.float32).reshape(6, 16)
+    handles = [
+        block.register_forward_hook(lambda _module, _args, _output: state)
+        for block in subject.encoder_layers()
+    ]
+    projector = subject.projector()
+    assert projector is not None
+    handles.append(projector.register_forward_hook(lambda _module, _args, _output: projected_state))
+    try:
+        grid = ResizedGrid.of(subject, inputs)
+        cells = grid.cells(84, 56, [28, 0, 28, 28])
+        assert cells == [1]
+        pooled, projected = region_features(subject, inputs, [cells], grid)
+    finally:
+        for handle in handles:
+            handle.remove()
+    torch.testing.assert_close(pooled[0], state[[4, 5, 6, 7]].mean(dim=0).expand(3, -1))
+    assert projected is not None
+    torch.testing.assert_close(projected[0], projected_state[1])
+
+
+def test_rice_region_mapping_excludes_the_leading_class_token() -> None:
+    from types import SimpleNamespace
+
+    from swce.diagnostics.attention import ResizedGrid
+    from swce.diagnostics.encoder import _merged_region_indices, _resized_region_offset
+
+    tower: Any = torch.nn.Module()
+    tower.blocks = torch.nn.ModuleList([torch.nn.Identity()])
+    tower.merger = torch.nn.Identity()
+    tower.patch_embed = torch.nn.Identity()
+    tower.pre_layernorm = torch.nn.Identity()
+    tower.class_embedding = torch.nn.Parameter(torch.zeros(16))
+    tower.class_pos_emb = torch.nn.Parameter(torch.zeros(1, 4))
+    tower.spatial_merge_size = 2
+    tower.patch_size = 14
+    tower.window_size = None
+    subject: Any = SimpleNamespace(
+        model=tower, projector=lambda: tower.merger, encoder_layers=lambda: list(tower.blocks)
+    )
+    grid = ResizedGrid(4, 6, 14, 2)
+    offset = _resized_region_offset(subject, {"image_grid_thw": torch.tensor([[1, 4, 6]])}, grid)
+    assert offset == 1
+    indices = _merged_region_indices([[1], list(range(6))], grid.merge, offset)
+    assert indices[0] == [5, 6, 7, 8]
+    assert indices[1] == list(range(1, 25))
+    state = torch.arange(25 * 16, dtype=torch.float32).reshape(25, 16)
+    torch.testing.assert_close(state[indices[1]].mean(dim=0), state[1:].mean(dim=0))
+    tower.window_size = 4
+    with pytest.raises(ValueError, match="unsupported merged"):
+        _resized_region_offset(subject, {"image_grid_thw": torch.tensor([[1, 4, 6]])}, grid)
+
+
+@pytest.mark.parametrize("shape", [[[2, 2, 2]], [[1, 4, 2]], [[1, 2, 2], [1, 2, 2]]])
+def test_resized_regions_reject_mismatched_or_temporal_grids(shape: list[list[int]]) -> None:
+    from tiny import tiny_qwen
+
+    from swce.diagnostics.attention import ResizedGrid
+    from swce.diagnostics.encoder import region_features
+
+    subject = tiny_qwen()
+    inputs = dict(tiny_inputs(subject), image_grid_thw=torch.tensor(shape))
+    with pytest.raises(ValueError, match="one still image"):
+        region_features(subject, inputs, [[0]], ResizedGrid(2, 2, 14, 2))
+
+
+@pytest.mark.parametrize("source", ["encoder", "projector"])
+def test_resized_regions_reject_unexpected_token_counts(source: str) -> None:
+    from tiny import tiny_qwen
+
+    from swce.diagnostics.attention import ResizedGrid
+    from swce.diagnostics.encoder import region_features
+
+    subject = tiny_qwen()
+    module = subject.encoder_layers()[0] if source == "encoder" else subject.projector()
+    assert module is not None
+    before = dict(module._forward_hooks)
+    handle = module.register_forward_hook(lambda _module, _args, output: output[:-1])
+    try:
+        with pytest.raises(ValueError, match=f"Cannot map {source} tokens"):
+            region_features(subject, tiny_inputs(subject), [[0]], ResizedGrid(2, 2, 14, 2))
+    finally:
+        handle.remove()
+    assert dict(module._forward_hooks) == before
+
+
+@pytest.mark.parametrize("cells", [[], [[]], [[-1]], [[1]]])
+def test_resized_regions_reject_cells_outside_grid(cells: list[list[int]]) -> None:
+    from tiny import tiny_qwen
+
+    from swce.diagnostics.attention import ResizedGrid
+    from swce.diagnostics.encoder import region_features
+
+    subject = tiny_qwen()
+    with pytest.raises(ValueError, match="Region cells"):
+        region_features(subject, tiny_inputs(subject), cells, ResizedGrid(2, 2, 14, 2))
+
+
+def test_resized_regions_reject_unknown_tower_and_indivisible_grid() -> None:
+    from tiny import tiny_qwen
+
+    from swce.diagnostics.attention import ResizedGrid
+    from swce.diagnostics.encoder import region_features
+
+    subject = tiny_qwen()
+    inputs = dict(tiny_inputs(subject), image_grid_thw=torch.tensor([[1, 3, 2]]))
+    with pytest.raises(ValueError, match="divisible"):
+        region_features(subject, inputs, [[0]], ResizedGrid(3, 2, 14, 2))
+    with pytest.raises(ValueError, match="unsupported merged"):
+        region_features(subject, tiny_inputs(subject), [[0]], ResizedGrid(2, 2, 14, 1))
