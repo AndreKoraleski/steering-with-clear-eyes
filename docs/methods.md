@@ -658,6 +658,68 @@ deeper also in the share of their layers, and their wrong yeses do not lean on t
 of the question that those of LLaVA-1.5-7B lean on, so a layer chosen on LLaVA-1.5-7B does not
 fall on the same step of these two.
 
+### The answers of LLaVA-OneVision-1.5-8B item by item, and the yes or no instruction
+
+The item analysis of LLaVA-1.5-7B, with `swce-diagnose --items`, on the answers of the main
+experiment of `llava-onevision-1.5-8b`, and its POPE tasks asked again with "Please answer yes or
+no." appended, `pope-adversarial-yn` and `repope-adversarial-yn`, with `swce-evaluate`. The
+evaluation ran on one RTX 4090, the card of the main run, with Python 3.13.13, PyTorch
+2.14.1+cu126, transformers 5.23.0, bfloat16 and seed zero. Its scores are in
+`results/leaderboard.csv`.
+
+**The answers item by item.**
+
+- **The objects most hallucinated are again small things that fit many scenes, at lower rates.**
+  Among absent objects asked about 20 times or more, the unmodified model says yes to 33% of
+  trucks, 32% of handbags, 23% of backpacks, 17% of bottles and 13% of chairs, against 10% of
+  dining tables and 3% of cars. The rate of an object rises with its co-occurrence with the
+  objects of the image, with a Spearman correlation of 0.24 across objects and 0.12 across
+  questions, against 0.30 and 0.22 on LLaVA-1.5-7B.
+- **VTI moves answers toward yes, the other way from LLaVA-1.5-7B.** It turns 48 correct noes into
+  wrong yeses and fixes none, and fixes 34 misses while breaking 5. Its random control does the
+  same, less, breaking 19 correct noes and fixing 22 misses. On LLaVA-1.5-7B, VTI at its POPE
+  setting moves answers toward no.
+- **REVIS barely moves POPE, and its control moves it more.** REVIS fixes 16 answers and breaks 12.
+  Its control fixes 33 wrong yeses and breaks 39 correct yeses.
+- **RePOPE helps OneVision more than LLaVA-1.5-7B.** Of the 388 errors of the unmodified model, 122
+  are on relabelled questions. Removing the ambiguous questions raises the F1 from 0.866 to 0.889,
+  and the new labels bring it to 0.914. On LLaVA-1.5-7B the new labels lower it, from 0.811 to
+  0.805, so OneVision agrees with the corrected labels where LLaVA-1.5-7B does not.
+- **Every method moves the first answer token and almost no answer.** VTI moves the probability
+  of the first token of 94% of the POPE answers, REVIS of 93% and their controls of 91% and 96%,
+  and each changes at most 3% of the answers. REVIS acts at block 21 here, where its gate is open
+  at the last prompt token, unlike REVIS at block 31 on LLaVA-1.5-7B.
+- **No method costs a subtask of MME about objects.** On existence, count, position and color,
+  every method is within 5 points of the unmodified model, where VTI at its POPE setting loses 70
+  points on count on LLaVA-1.5-7B.
+
+**The yes or no instruction.**
+
+| F1 | POPE as written | POPE, yes or no | RePOPE as written | RePOPE, yes or no |
+|---|---|---|---|---|
+| Unmodified | 0.866 | 0.866 | 0.914 | 0.917 |
+| VTI | 0.863 | 0.866 | 0.908 | 0.915 |
+| VTI control | 0.869 | 0.867 | 0.916 | 0.920 |
+| REVIS | 0.867 | 0.865 | 0.916 | 0.916 |
+| REVIS control | 0.862 | 0.868 | 0.915 | 0.921 |
+
+- **The instruction leaves the unmodified model where it was.** Its F1 stays at 0.866, its AUROC
+  at 0.942, its yes ratio goes from 0.462 to 0.450 and d' from 2.29 to 2.35. It still answers
+  with a sentence that begins with yes or no.
+- **With the instruction, no method changes POPE.** No F1 moves by more than 0.003 on either label
+  set, every McNemar p is 0.26 or more, and no yes ratio moves by more than 0.005.
+- **The instruction removes the push of VTI toward yes.** Asked as written, VTI raises the yes
+  ratio by 0.026 and lowers d' by 0.09. With the instruction it changes the yes ratio by 0.001
+  and d' by -0.01 [-0.05, +0.04], and it fixes 21 answers and breaks 22, with no direction.
+- LLaVA-1.5-7B has not yet been asked the variant, which is issue #37, so this part has no
+  reading on that model to set against.
+
+**What holds on both models.** Co-occurrence predicts which absent objects are hallucinated, and
+the same kinds of object are hallucinated most. No method improves POPE beyond its random
+control. VTI moves the first answer token of most questions of POPE while changing few answers.
+What differs is the direction VTI pushes the answers, toward no on LLaVA-1.5-7B and toward yes on
+OneVision, and that the corrected labels of RePOPE help OneVision and not LLaVA-1.5-7B.
+
 ### Sparse autoencoders on four blocks
 
 `swce-sae` trained TopK autoencoders of 32768 latents, with 64 kept per state, on blocks 9, 13,
