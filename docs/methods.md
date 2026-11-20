@@ -348,11 +348,13 @@ are in `results/leaderboard.csv`.
   beyond that shortcut. Its MME changes by -15 [-39, +3].
 - **The REVIS control does not raise CHAIR_S significantly.** Its change is +5.0 [-0.2, +10.6]
   points with a Holm p of 0.73, and its descriptions run to 381 words, more than twice the
-  unmodified length, which issue #20 checks for loops. The difference between REVIS and its
-  control rests on that control and is not reported as a gain until then.
+  unmodified length. They reach the token limit without looping, as checked below, so its CHAIR
+  and the difference of 12.8 points between REVIS and its control stand.
 - **VTI does not help.** Its CHAIR_S is 34.4, within the interval of the unmodified model, with
-  descriptions of 304 words, and its MME falls by 51 [2, 100]. Its control changes CHAIR_S by +4.0
-  points, not significantly, at 195 words.
+  descriptions of 304 words, and its MME falls by 51 [2, 100]. That CHAIR_S is not comparable,
+  since 131 of its descriptions break into loops or single words, and neither is the difference
+  of 3.0 points between VTI and its control. Its control changes CHAIR_S by +4.0 points, not
+  significantly, at 195 words.
 - No method is non-inferior to the unmodified model on MME.
 - **The logit lens separates the questions whose answer is yes from those whose answer is no.**
   On POPE adversarial its AUROC stays near 0.5 up to block 17, rises to 0.87 at block 18 and 0.93
@@ -362,6 +364,39 @@ are in `results/leaderboard.csv`.
   the blocks below it as they were. Why its gate opens there without moving POPE is below.
 
 Lengths are in words, as `results/leaderboard.csv` reports them.
+
+### Loops at the token limit on LLaVA-OneVision-1.5-8B
+
+Every CHAIR description of the five conditions was sorted by its last 300 characters. A
+description loops when those characters repeat a period of at most 80 characters at 85% of
+their positions, or when it ends in a sequence of at most 20 words repeated three times or more.
+It is fragmented when its lines hold at most two words, or when letters make up less than 35% of
+those characters. CHAIR is then computed again without those descriptions, on each condition
+and on the 369 images where no condition loops or fragments.
+
+| Condition | At the limit of 512 tokens | Loops | Fragmented | CHAIR_S, all 500 | CHAIR_S, 369 images | Change from unmodified on the 369 |
+|---|---|---|---|---|---|---|
+| Unmodified | 0 | 0 | 0 | 33.4 | 33.1 | |
+| VTI | 299 | 34 | 97 | 34.4 | 37.9 | +4.8 [-0.5, +10.3] |
+| VTI control | 2 | 0 | 0 | 37.4 | 37.4 | +4.3 [-0.5, +9.8] |
+| REVIS | 0 | 0 | 0 | 25.6 | 25.5 | -7.6 [-12.7, -2.4] |
+| REVIS control | 186 | 0 | 0 | 38.4 | 37.7 | +4.6 [-1.4, +10.8] |
+
+Intervals are bootstrap intervals over the images, paired with the unmodified model.
+
+- **Only VTI loops, and its loops flatter its CHAIR.** Its 34 loops repeat a numbered list or an
+  empty bullet, such as "44. A container." up to the limit, and its 97 fragmented descriptions
+  put one or two words on each line. Without them its CHAIR_S rises from
+  34.4 to 37.9. Its CHAIR row on the leaderboard, and the `beyond_control` of VTI on CHAIR, which
+  compares it with its control, are not comparable.
+- **The REVIS control reaches the limit without looping.** Its 186 long descriptions keep fluent
+  sentences but leave the image and continue as essays, for instance "the image serves as a
+  reminder of the power of photography". Its CHAIR_S moves by less than a point without them, so
+  it is confirmed, and so is the `beyond_control` of REVIS on CHAIR, 12.8 points. It compares a
+  method that shortens its descriptions with a control that lengthens them, which the recall
+  shortcut above already discounts.
+- **The other rows are confirmed.** The unmodified model, REVIS and the VTI control never loop,
+  and two VTI control descriptions reach the limit in ordinary prose.
 
 ### Why REVIS behaves so on LLaVA-OneVision-1.5-8B
 
