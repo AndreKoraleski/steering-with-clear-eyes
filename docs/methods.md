@@ -292,6 +292,48 @@ or REVIS.
   the unmodified descriptions. The cause of the difference is not known, and the finding holds
   for this protocol.
 
+### POPE without the threshold
+
+F1 mixes how well a model tells present from absent objects with how readily it says yes. The
+rows of `results/leaderboard.csv` also hold the yes ratio, d' and the criterion c of signal
+detection theory, computed from the same answers, and the AUROC of the margin of the first answer
+token, which needs no threshold at all. A positive c is a model that says no more readily. Changes
+are against the unmodified model, with their 95% bootstrap intervals over images.
+
+| POPE adversarial | F1 | Yes ratio | c | d' | AUROC |
+|---|---|---|---|---|---|
+| LLaVA-1.5-7B, unmodified | 0.802 | 0.617 | -0.42 | 1.68 | 0.907 |
+| VTI, POPE setting | +0.005 [-0.003, +0.013] | -0.037 | +0.13 | +0.02 [-0.06, +0.08] | -0.009 [-0.013, -0.004] |
+| VTI control | +0.006 [-0.001, +0.011] | -0.027 | +0.09 | +0.03 [-0.03, +0.08] | -0.000 [-0.002, +0.002] |
+| REVIS, block 30 | -0.015 [-0.023, -0.007] | +0.073 | -0.27 | -0.01 [-0.09, +0.07] | -0.000 |
+| REVIS control, block 30 | -0.008 [-0.014, -0.001] | +0.047 | -0.18 | +0.00 [-0.06, +0.07] | +0.000 |
+| OneVision-1.5-8B, unmodified | 0.866 | 0.462 | +0.18 | 2.30 | 0.942 |
+| VTI | -0.003 [-0.009, +0.004] | +0.026 | -0.13 | -0.09 [-0.16, -0.04] | -0.001 [-0.003, +0.001] |
+| VTI control | +0.003 [-0.001, +0.008] | +0.012 | -0.06 | -0.01 [-0.05, +0.04] | -0.001 [-0.002, +0.000] |
+| REVIS | +0.001 [-0.003, +0.005] | -0.001 | +0.01 | +0.02 [-0.02, +0.05] | +0.000 [-0.001, +0.002] |
+| REVIS control | -0.003 [-0.010, +0.003] | -0.020 | +0.11 | +0.05 [-0.01, +0.12] | -0.001 [-0.003, +0.001] |
+
+REVIS at block 31 of LLaVA-1.5-7B and its control answer POPE exactly as the unmodified model
+does, so they are left out. Every change of the yes ratio and of c in the table excludes zero
+except those of REVIS on OneVision.
+
+- **Every change of F1 on POPE is a move of the threshold.** On both models and both label sets
+  no change of d' excludes zero but that of VTI on OneVision POPE, and the changes of F1 follow
+  the yes ratio. REVIS at block 30 loses F1 on LLaVA-1.5-7B by saying yes more, and its random
+  control makes about two thirds of that shift. VTI gains on LLaVA-1.5-7B by saying no more,
+  and its control gains as much.
+- **The one change that survives without the threshold is a loss, by VTI on both models.** On
+  LLaVA-1.5-7B VTI lowers the AUROC by 0.009 on POPE and 0.011 on RePOPE where its control
+  changes it by 0.002 at most, so the margin of its first token ranks present and absent objects
+  slightly worse. On OneVision it lowers d' by 0.09, while the AUROC stays where it was, so the
+  ranking of the margins holds and the answers it gives separate slightly less.
+- **VTI moves the threshold the other way on each model.** It raises c on LLaVA-1.5-7B, which
+  says yes too often, and lowers it on OneVision, which says yes to fewer than half of the
+  questions, so whether it gains or loses F1 on POPE depends on where the model starts.
+- RePOPE gives the same picture. VTI lowers the AUROC by 0.011 on LLaVA-1.5-7B and by 0.001 on
+  OneVision, every other change of the AUROC is 0.003 or less, and no change of d' excludes
+  zero.
+
 ### Linear probes on POPE adversarial
 
 `swce-diagnose --probe` fitted a probe of the expected answer on every block, on the 3000
