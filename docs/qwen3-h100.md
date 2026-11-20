@@ -1,6 +1,7 @@
 # Qwen3-VL-8B in one Slurm job (issue #3)
 
-**Integrated real preflight passed; smoke and full evaluation have not run.** Job 37600
+**The full evaluation has run, as run `job-37620`; see [Full run](#full-run-2026-11-19-to-20)
+and the results in [docs/methods.md](methods.md#qwen3-vl-8b).** The history below led to it. Job 37600
 stopped on seven of forty mismatching answers, before smoke or evaluation. Diagnostic 37609
 restored 40/40 equality, including every saved logit, by excluding only cuDNN SDPA. This policy
 is now integrated. Job **37614** passed the real, uninstrumented forty-question gate and stopped
@@ -212,6 +213,21 @@ not a real-model validation of the new source revision; use a fresh run ID for t
   directory or fitted-artifact directory. No previous run was overwritten or resumed, no
   leaderboard rows were published, and the dependency lock did not change.
 
+## Full run (2026-11-19 to 20)
+
+- Job **37620** started `--full` at 03:44 on 2026-11-19 under run `job-37620`. Preflight (40/40)
+  and smoke passed, and the unmodified condition finished: POPE and RePOPE in 61 minutes, CHAIR
+  in 69 and MME in 3.5. At 07:08:48 the node ended every running job on it, those of other users
+  included, with SIGTERM, while VTI was at question 568 of POPE.
+- Job **37633** resumed it with `SWCE_RUN_ID=job-37620` at 13:04, after the base commit and the
+  source manifest were checked to be identical. The runner continued VTI from question 568.
+  Every condition, scoring and probes finished at 00:50 on 2026-11-20, exit 0:0, after 11h46.
+- Generation runs at 40 to 50 tokens per second with one question at a time. A condition takes
+  about 2h15, mostly POPE, whose answers reach the 64-token budget, and CHAIR. Conditions whose
+  descriptions run into loops take longer on CHAIR, up to 14.5 seconds a description.
+- Results: `/raid/$USER/swce-qwen3-h100/runs/job-37620/results/`. Its leaderboard rows are merged
+  into `results/leaderboard.csv`.
+
 ## Interrupted runs and remaining scientific work
 
 An interrupted run keeps its partial answers. To resume, explicitly reuse the previous
@@ -233,6 +249,13 @@ automatically. Before publishing, Henrick and Andre still need to record:
   unmodified model with the literature under the actual protocol.
 - GPU, driver, Python, torch, torchvision, transformers, checkpoint revision, all departures
   and every inapplicable method/branch in [docs/methods.md](methods.md).
+
+For run `job-37620`, [docs/methods.md](methods.md#qwen3-vl-8b) records all of these but one:
+the block (34), threshold (-0.111) and signs of REVIS; the gate rates, inferred from the
+first-token probabilities, as 100% for method and control on POPE and MME; the descriptions at
+the budget and in loops, and the matched-recall shortcut, per condition; F1 with yes ratio,
+AUROC and d'; the MME cost; and the environment. The comparison of the unmodified MME with the
+literature is still open, since the Qwen3-VL technical report has not been checked.
 
 Gate-rate and caption-loop analyses are not automated by this wrapper. Keep the captured
 artifacts and outputs for those analyses; some diagnostics may require additional inference.

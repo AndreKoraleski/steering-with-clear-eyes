@@ -51,7 +51,8 @@ answer records** in job **37614**
 (2min17s, exit 0:0), with equal generation configurations and effective attention flags.
 It stopped before smoke, fitting or evaluation. The production gate compares full decoded text
 and token counts, not raw logits; the full-logit measurements above belong to diagnostic 37609.
-No full Qwen results are being reported. The constructor refactoring broadens the default to
+The full experiment then ran as run `job-37620`, described under
+[Qwen3-VL-8B](#qwen3-vl-8b) below. The constructor refactoring broadens the default to
 all wrapped models; it passed the real 40/40 preflight in job 37619. That job stopped during
 REVIS vector fitting, before evaluation, because the processor rejected an empty-image prompt.
 The tokenizer compatibility fix is described below. Do not treat historical LLaVA results as
@@ -231,7 +232,8 @@ images. Its scores are in `results/leaderboard.csv`.
   lowers the F1 to 0.787 on POPE adversarial and to 0.770 on RePOPE. It ran later on the same
   kind of card, after a calibration that gave block 31 the same threshold to the last digit.
 - LLaVA-OneVision-1.5-8B ran the same experiment at the `code-default` settings, below.
-- Qwen3-VL has run preflight/diagnostic checks only, not the full experiment.
+- Qwen3-VL-8B ran the full experiment, with VTI, REVIS and their controls at `code-default`, as
+  [Qwen3-VL-8B](#qwen3-vl-8b) describes.
 
 ### Why REVIS behaves so on LLaVA-1.5-7B
 
@@ -765,6 +767,101 @@ These readings are correlational. Removing a latent and watching the answers wou
 it matters, and needs autoencoders that replicate first, so a longer training. The trained
 autoencoders, their curves and the tables of these checks are kept with the data and are not
 committed.
+
+### Qwen3-VL-8B
+
+The main experiment ran on `qwen3-vl-8b` as run `job-37620`: Slurm job 37620 until a node-wide
+termination at 07:08 on 2026-11-19 that ended every job on the node, then job 37633, which
+resumed it on identical code and finished at 00:50 on 2026-11-20. No published setting covers
+this model, so VTI, REVIS and their controls ran at `code-default`. Every condition answered the
+whole of POPE adversarial, RePOPE, CHAIR and MME. Its scores are in `results/leaderboard.csv`.
+
+- Environment: one NVIDIA H100 80GB HBM3 on `dgx-H100-02`, driver 580.159.03, Python 3.13.18,
+  PyTorch 2.14.1+cu130, transformers 5.23.0, `Qwen/Qwen3-VL-8B-Instruct` at `0c351dd0`, bfloat16,
+  the shipped sampling settings, seed zero, cuDNN SDPA disabled, one condition after another.
+
+| | Unmodified | VTI | VTI control | REVIS | REVIS control |
+|---|---|---|---|---|---|
+| POPE adversarial F1 | 0.871 | 0.848 | 0.863 | 0.869 | 0.706 |
+| POPE adversarial yes ratio | 0.507 | 0.578 | 0.526 | 0.506 | 0.821 |
+| POPE adversarial AUROC | 0.942 | 0.942 | 0.941 | 0.942 | 0.941 |
+| POPE adversarial d' | 2.25 | 2.06 | 2.17 | 2.24 | 0.94 |
+| RePOPE F1 | 0.912 | 0.863 | 0.901 | 0.910 | 0.682 |
+| RePOPE d' | 2.91 | 2.61 | 2.86 | 2.89 | 1.46 |
+| CHAIR_S and CHAIR_I | 53.2 and 9.7 | 9.4 and 3.9 | 49.6 and 9.4 | 3.0 and 3.0 | 56.0 and 11.3 |
+| CHAIR recall | 0.765 | 0.345 | 0.768 | 0.304 | 0.740 |
+| Descriptions at the 512-token limit | 53 | 500 | 56 | 492 | 172 |
+| MME total | 2403 | 2382 | 2390 | 2365 | 2396 |
+
+- **No method improves POPE, RePOPE or MME.** REVIS answers them as the unmodified model does, VTI
+  loses 2.3 F1 points on POPE adversarial and 4.9 on RePOPE as it raises the yes ratio, and every
+  condition stays within 39 points of the unmodified MME. The AUROC, which needs no threshold,
+  is 0.941 to 0.942 in every condition.
+- **The gains on CHAIR come from broken descriptions.** VTI and REVIS lower CHAIR_S to 9.4 and
+  3.0, but nearly all of their descriptions run to the token limit and the recall falls from
+  0.765 to 0.345 and 0.304. Truncating the unmodified descriptions to the same recall gives a
+  CHAIR_S of 7.8 and 3.4, so the shortcut matches both gains. Under VTI, 424 of the 500
+  descriptions put a line break after nearly every word and 202 end in a loop. Under REVIS, 388
+  end in a loop of a repeated word, such as "actually". A description that names few objects
+  hallucinates few, so these CHAIR scores are not comparable with the unmodified one.
+- **The VTI control keeps the text fluent and changes nothing.** Its descriptions keep their
+  length and recall and its CHAIR_S of 49.6 is matched by the shortcut, so the break under VTI
+  comes from its directions, not from the size of the edit.
+- **POPE answers grow longer under every method.** Their budget is 64 tokens, which 1940 of the
+  3000 unmodified answers already reach, as Qwen3-VL explains its answer. VTI raises that to
+  2995, REVIS to 2895 and its control to 2797.
+- **The F1 of the REVIS control is an artefact of the official parser.** Its POPE answers often
+  bold the negation, as in "there is **not** a car". The official parser reads an answer as no
+  only on the bare words `No`, `not` or `no`, so it reads these as yes: 82.1% of the answers,
+  against 57.5% by the first-token probabilities. The control does shift answers toward yes, 164
+  questions by the first token, but most of the fall in F1, and in d', which is computed from the
+  parsed answers, comes from the parser. Its AUROC is that of the unmodified model.
+
+### Why REVIS behaves so on Qwen3-VL-8B
+
+- **The calibration selects block 34, with a threshold of -0.111.** It searches downward from the
+  top, at the 85th percentile, and on block 35 the mean risk is not higher on false positives
+  than on correct answers. The gate opens wherever the cosine between the state and the vector is below 0.111.
+- **The vector keeps the sign of the one below it.** Block 34 reads the vector at hidden state
+  index 35, whose cosine with index 34 is 0.924. The visual vectors computed here flip sign at indices 2, 6, 11, 13 to 15, 17, 20 and 23 to 27, each by a cosine between -0.29 and
+  -0.87, all below the block the calibration selects.
+- **The gate is open at the first answer token of every question.** A closed gate adds an exact
+  zero, and the answers are reproducible to the logit on this card, so the first-token
+  probabilities equal the unmodified ones wherever the gate stays shut. They differ on all 3000
+  POPE and all 2374 MME questions, under the method and its control alike. This is inferred from
+  the saved probabilities, not counted inside the hook. For the control, the cosine of a random
+  vector with any state has a standard deviation of 1 over the square root of 4096, 0.016, far
+  below 0.111, so its gate is open as well.
+- **At the first answer token the method barely acts.** The median change in the probability of
+  yes is 0.0001, and the first-token answer changes on 4 POPE and 7 MME questions. On later tokens
+  it keeps the model talking until the descriptions run into loops.
+
+### Linear probes on POPE adversarial, Qwen3-VL-8B
+
+| Block | 0 | 4 | 8 | 12 | 16 | 20 | 24 | 28 | 32 | 35 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Probe of the unmodified model, AUROC | 0.632 | 0.731 | 0.829 | 0.902 | 0.940 | 0.948 | 0.947 | 0.950 | 0.955 | 0.954 |
+| Logit lens of the unmodified model, AUROC | 0.513 | 0.574 | 0.510 | 0.402 | 0.466 | 0.941 | 0.951 | 0.944 | 0.944 | 0.948 |
+
+- **The answer is readable eight blocks before the logit lens shows it.** The probe reaches 0.90
+  at block 12 and 0.94 at block 16, where the lens is still at chance. The lens reads it from
+  block 20.
+- **No method adds what the stream holds about the answer.** A probe fitted under any condition
+  matches the unmodified one within 0.01 at every block shown.
+- **VTI displaces the stream from block 4 on, and so does its control.** The unmodified probe,
+  applied under VTI, falls to 0.67 at block 8 and 0.71 at block 12 and recovers to 0.85 at the
+  output, and under the control to 0.70 and 0.75. A probe fitted under either still finds the
+  answer.
+- **REVIS moves only the last block, and only under its control.** It acts at block 34, so only
+  block 35 can change. The unmodified probe there stays at 0.951 under REVIS and falls to 0.771
+  under its control.
+
+### Comparison with published results, Qwen3-VL-8B
+
+Not done yet. The model card of Qwen3-VL-8B-Instruct reports its benchmarks as images and lists
+neither MME nor POPE nor CHAIR in text, and its technical report, arXiv 2511.21631, has not been
+checked. The unmodified MME here is 2403, with a perception score of 1741 and a cognition score of
+662, under the questions as MME asks them and the shipped sampling settings.
 
 The interventions, the fitting of the VTI directions, the principal direction of REVIS, its
 selection of a layer and the states VISTA reads are tested against the official code.

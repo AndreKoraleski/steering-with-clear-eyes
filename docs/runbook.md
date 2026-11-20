@@ -68,7 +68,8 @@ excluding cuDNN SDPA; the opt-in implementation then passed the real preflight *
 `HuggingFaceSubject` rather than configured by each job; that refactoring still needs a fresh
 real-model check in every new run. Job 37619 passed that gate 40/40, then stopped during REVIS
 vector fitting on an empty-image processor validation error. See the checklist for the fix,
-evidence and runtime scope; no full Qwen evaluation has finished.
+evidence and runtime scope. The full Qwen evaluation then ran as run `job-37620` (jobs 37620
+and 37633); [docs/methods.md](methods.md#qwen3-vl-8b) describes its results.
 
 ## 2. Jobs
 
