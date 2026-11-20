@@ -356,3 +356,128 @@ def test_patching_tries_partners_until_one_fits(monkeypatch: pytest.MonkeyPatch)
     frame = patching.patching_task(object(), "pope-tiny", answers, pairs=1)  # type: ignore[arg-type]
     assert len(calls) == 2
     assert frame["tried"].tolist() == [2]
+
+
+def test_region_tokens_preserve_the_old_mean_and_exclude_cls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from swce.diagnostics.attention import Grid
+    from swce.diagnostics.encoder import _image_features, region_features
+
+    subject = tiny_llava()
+    inputs = tiny_inputs(subject)
+    monkeypatch.setattr(HuggingFaceSubject, "template", lambda self, prompt: "template")
+    monkeypatch.setattr(subject, "inputs", lambda image, text: inputs)
+    tokens, projected_tokens = _image_features(subject, inputs, lambda state, source: state)
+    before = [dict(block._forward_hooks) for block in subject.encoder_layers()]
+    mean, projected_mean = image_features(subject, Image.new("RGB", (28, 28)))
+    pooled, projected = region_features(subject, inputs, [[0, 1, 2, 3], [2]], Grid(28, 28, 14))
+    assert torch.allclose(tokens.mean(dim=1), mean, atol=1e-6)
+    assert torch.allclose(pooled[0], tokens[:, 1:].mean(dim=1), atol=1e-6)
+    assert torch.allclose(pooled[1], tokens[:, 3], atol=1e-6)
+    assert torch.allclose((pooled[0] * 4 + tokens[:, 0]) / 5, mean, atol=1e-6)
+    assert projected is not None and projected_mean is not None and projected_tokens is not None
+    assert torch.allclose(projected[0], projected_mean, atol=1e-6)
+    assert torch.allclose(projected[1], projected_tokens[2], atol=1e-6)
+    with pytest.raises(ValueError, match="Cannot map"):
+        region_features(subject, inputs, [[0]], Grid(42, 42, 14))
+    assert [dict(block._forward_hooks) for block in subject.encoder_layers()] == before
+
+
+def test_region_cells_drop_boxes_outside_the_crop() -> None:
+    from swce.diagnostics.attention import Grid
+    from swce.diagnostics.encoder import region_cells
+
+    kept = region_cells(
+        Grid(336, 336, 14),
+        672,
+        336,
+        [
+            ("outside", [0, 0, 100, 100]),
+            ("edge", [100, 0, 136, 10]),
+            ("inside", [168, 0, 14, 14]),
+            ("empty", [168, 0, 0, 14]),
+            ("under", [99, 0, 136, 10]),
+        ],
+    )
+    assert [name for name, _, _ in kept] == ["edge", "inside"]
+    assert kept[1] == ("inside", 196, [0])
+
+
+def test_region_probes_recognize_separable_categories() -> None:
+    from swce.diagnostics.encoder import probe_regions
+
+    rng = np.random.default_rng(8)
+    names = ["dog", "cat"] * 40
+    features = rng.normal(size=(80, 2, 5)).astype(np.float32)
+    features[:, 1, 0] += np.array([5 if name == "dog" else -5 for name in names])
+    frame = probe_regions(
+        {"encoder": features},
+        names,
+        {"encoder": features},
+        names,
+        [(i, name, i % 3 == 0) for i, name in enumerate(names)],
+        ["dog", "cat"],
+        device=torch.device("cpu"),
+    )
+    assert frame["region_auroc"].iloc[1] == pytest.approx(1)
+    assert frame["categories"].tolist() == [2, 2]
+    assert frame["correct_yes"].tolist() == [27, 27]
+    assert frame["missed"].tolist() == [53, 53]
+    assert not frame.isna().any().any()
+
+
+def test_encoder_regions_task_reads_boxes_and_margins(monkeypatch: pytest.MonkeyPatch) -> None:
+    from types import SimpleNamespace
+
+    from swce.diagnostics.attention import Grid
+    from swce.diagnostics.encoder import encoder_regions_task
+    from swce.tasks.task import Task
+
+    subject = tiny_llava()
+    monkeypatch.setattr(HuggingFaceSubject, "template", lambda self, prompt: "template")
+    monkeypatch.setattr(subject, "inputs", lambda image, text: tiny_inputs(subject))
+    monkeypatch.setattr(Grid, "of", classmethod(lambda cls, subject: Grid(28, 28, 14)))
+    image = Image.new("RGB", (28, 28))
+    boxes = [(name, [0.0, 0.0, 14.0, 14.0]) for name in ["dog", "cat"] * 10]
+    boxes += [("dog", [0.0, 0.0, 28.0, 28.0])]
+    items = [
+        SimpleNamespace(
+            id=str(i),
+            group="image",
+            prompt="Is there a dog in the image?",
+            label="yes" if i < 2 else "no",
+        )
+        for i in range(3)
+    ]
+    monkeypatch.setattr(Task, "items", lambda self, limit=None: items)
+    monkeypatch.setattr(Task, "image", lambda self, item: image)
+    answers = pd.DataFrame({"id": ["2", "1", "0"], "margin": [4.0, 0.0, 1.0]})
+    frame = encoder_regions_task(
+        subject,
+        "pope-adversarial",
+        [(image, boxes)],
+        ["dog", "cat"],
+        answers,
+        {"image": (28, 28, boxes)},
+    )
+    assert set(frame["source"]) == {"encoder", "projector"}
+    assert len(frame) == 4
+    assert set(frame["model"]) == {"tiny-llava"}
+    assert set(frame["task"]) == {"pope-adversarial"}
+    assert frame["correct_yes"].tolist() == [1] * 4
+    assert frame["missed"].tolist() == [1] * 4
+    assert frame["boxes"].tolist() == [21] * 4
+    assert not frame.isna().any().any()
+
+
+def test_region_features_reject_merged_encoder_layout() -> None:
+    from tiny import tiny_qwen
+
+    from swce.diagnostics.attention import ResizedGrid
+    from swce.diagnostics.encoder import region_features
+
+    subject = tiny_qwen()
+    inputs = tiny_inputs(subject)
+    with pytest.raises(ValueError, match="merged patches"):
+        region_features(subject, inputs, [[0]], ResizedGrid.of(subject, inputs))

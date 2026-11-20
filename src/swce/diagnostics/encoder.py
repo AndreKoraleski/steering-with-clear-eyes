@@ -15,7 +15,7 @@ The regularization is the default of scikit-learn on standardized features, as f
 the stream, and is not tuned.
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +28,7 @@ from PIL import Image
 from torch import Tensor, nn
 from tqdm import tqdm
 
+from swce.diagnostics.attention import Grid, ResizedGrid
 from swce.diagnostics.coco import object_of
 from swce.diagnostics.probe import ITERATIONS, default_device
 from swce.metrics.yes_no import auroc
@@ -53,6 +54,20 @@ def image_features(subject: HuggingFaceSubject, image: Image.Image) -> tuple[Ten
         shape `(width,)`, or None when the subject names no projector. Both are in single
         precision on the processor.
     """
+    return _image_features(
+        subject,
+        subject.inputs(image, subject.template("")),
+        lambda state, source: state.mean(dim=0),
+    )
+
+
+@torch.inference_mode()
+def _image_features(
+    subject: HuggingFaceSubject,
+    inputs: Mapping[str, Tensor],
+    pool: Callable[[Tensor, str], Tensor],
+) -> tuple[Tensor, Tensor | None]:
+    """Reduce tokens inside the hooks, retaining only the requested features."""
     found: dict[int, Tensor] = {}
     projected: list[Tensor] = []
     blocks = subject.encoder_layers()
@@ -61,7 +76,7 @@ def image_features(subject: HuggingFaceSubject, image: Image.Image) -> tuple[Ten
     def block_hook(index: int) -> Any:
         def read(_module: nn.Module, _inputs: Any, output: Any) -> None:
             state = output[0] if isinstance(output, tuple) else output
-            found[index] = state.reshape(-1, state.shape[-1]).float().mean(dim=0).cpu()
+            found[index] = pool(state.reshape(-1, state.shape[-1]).float(), "encoder").cpu()
             if projector is None and index == len(blocks) - 1:
                 raise _StopError
 
@@ -69,14 +84,14 @@ def image_features(subject: HuggingFaceSubject, image: Image.Image) -> tuple[Ten
 
     def projector_hook(_module: nn.Module, _inputs: Any, output: Any) -> None:
         state = output[0] if isinstance(output, tuple) else output
-        projected.append(state.reshape(-1, state.shape[-1]).float().mean(dim=0).cpu())
+        projected.append(pool(state.reshape(-1, state.shape[-1]).float(), "projector").cpu())
         raise _StopError
 
     handles = [block.register_forward_hook(block_hook(i)) for i, block in enumerate(blocks)]
     if projector is not None:
         handles.append(projector.register_forward_hook(projector_hook))
     try:
-        subject.model(**subject.inputs(image, subject.template("")))
+        subject.model(**inputs)
     except _StopError:
         pass
     finally:
@@ -262,5 +277,218 @@ def encoder_task(
     questions = [(object_of(item.prompt), item.label == "yes") for item in items]
     frame = probe_encoder(
         train, [objects for _, objects in training], test, test_index, questions, names
+    )
+    return frame.assign(model=subject.name, task=task)
+
+
+def region_cells(
+    grid: Grid | ResizedGrid,
+    width: int,
+    height: int,
+    boxes: Sequence[tuple[str, list[float]]],
+) -> list[tuple[str, float, list[int]]]:
+    """Category, original area and cells of boxes at least half visible in the crop."""
+    kept = []
+    for name, box in boxes:
+        cells = grid.cells(width, height, box)
+        if grid.visible(width, height, box) >= 0.5 and cells:
+            kept.append((name, box[2] * box[3], cells))
+    return kept
+
+
+def region_features(
+    subject: HuggingFaceSubject,
+    inputs: Mapping[str, Tensor],
+    cells: Sequence[Sequence[int]],
+    grid: Grid | ResizedGrid,
+) -> tuple[Tensor, Tensor | None]:
+    """Pool patch tokens inside each hook, returning `(regions, blocks, width)`.
+
+    LLaVA-1.5 CLIP blocks include a class token at zero: grid cell i reads token i+1.
+    Its projector has only patch tokens and reads cell i directly. Unlike image_features,
+    region pooling excludes the class token. Resized encoders such as Qwen3-VL reorder and
+    merge patches; their encoder layout is unsupported even though ResizedGrid maps their
+    language model tokens. Unknown layouts raise ValueError rather than guessing offsets.
+
+    Args:
+        subject: Model whose encoder is read.
+        inputs: Processed inputs for one image.
+        cells: Patch indices of each region, in row-major order.
+        grid: Geometry used to map the boxes to cells.
+
+    Returns:
+        Encoder features `(regions, blocks, width)` and projector features `(regions, width)`,
+        or None when no projector is named, in single precision on the processor.
+    """
+    model: Any = subject.model
+    if not isinstance(grid, Grid) or model.config.model_type != "llava":
+        raise ValueError(
+            "Encoder regions support LLaVA-1.5 CLIP only; merged patches cannot be mapped"
+        )
+    count = grid.side**2
+    if not cells or any(not cell or min(cell) < 0 or max(cell) >= count for cell in cells):
+        raise ValueError("Region cells must be nonempty and inside the patch grid")
+
+    def pool(state: Tensor, source: str) -> Tensor:
+        offset = int(source == "encoder")
+        if state.shape[0] != count + offset:
+            raise ValueError(
+                f"Cannot map {source} tokens: expected {count + offset}, got {state.shape[0]}"
+            )
+        return torch.stack(
+            [
+                state[torch.as_tensor(cell, device=state.device) + offset].mean(dim=0)
+                for cell in cells
+            ]
+        )
+
+    encoder, projector = _image_features(subject, inputs, pool)
+    return encoder.transpose(0, 1), projector
+
+
+def read_regions(
+    subject: HuggingFaceSubject,
+    images: Sequence[tuple[Any, Sequence[tuple[str, list[float]]]]],
+    desc: str,
+) -> tuple[dict[str, NDArray[np.float32]], list[tuple[int, str, float]]]:
+    """Read images once and retain pooled regions and their image, category and area."""
+    encoders, projectors = [], []
+    regions: list[tuple[int, str, float]] = []
+    for index, (image, boxes) in enumerate(tqdm(images, desc=desc, mininterval=30)):
+        image = image() if callable(image) else image
+        inputs = subject.inputs(image, subject.template(""))
+        grid = Grid.of(subject) if subject.fixed_grid else ResizedGrid.of(subject, inputs)
+        kept = region_cells(grid, image.width, image.height, boxes)
+        if not kept:
+            continue
+        encoder, projector = region_features(subject, inputs, [cells for _, _, cells in kept], grid)
+        encoders.append(encoder.numpy())
+        if projector is not None:
+            projectors.append(projector.numpy()[:, None])
+        regions.extend((index, name, area) for name, area, _ in kept)
+    if not encoders:
+        raise ValueError(f"No kept boxes in {desc}")
+    features = {"encoder": np.concatenate(encoders)}
+    if projectors:
+        features["projector"] = np.concatenate(projectors)
+    return features, regions
+
+
+def probe_regions(
+    train: Mapping[str, NDArray[np.float32]],
+    train_names: Sequence[str],
+    test: Mapping[str, NDArray[np.float32]],
+    test_names: Sequence[str],
+    questions: Sequence[tuple[int, str, bool]],
+    names: Sequence[str],
+    *,
+    device: torch.device | None = None,
+) -> pd.DataFrame:
+    """Fit one-vs-rest region probes and read recognition and missed present objects.
+
+    Questions contain the largest kept region's row, category and whether the margin is
+    positive. Region AUROC averages categories with at least ten positive and ten negative
+    boxes. Missed AUROC treats an answered yes as positive. Counts and means refer to questions;
+    categories and boxes report recognition support. Undefined readings are NaN.
+
+    Args:
+        train: Training features by source, each shaped `(regions, blocks, width)`.
+        train_names: Category of each training region.
+        test: Evaluation features by the same sources.
+        test_names: Category of each evaluation region.
+        questions: Region row, category and model answer of each present question.
+        names: Categories of the one-vs-rest probes.
+        device: Device for fitting, or None for the first GPU when available.
+
+    Returns:
+        One row per source and block with both AUROCs and their support.
+    """
+    device = device or default_device()
+    targets = torch.from_numpy(presence(names, [frozenset([name]) for name in train_names])).to(
+        device
+    )
+    labels = presence(names, [frozenset([name]) for name in test_names])
+    column = {name: index for index, name in enumerate(names)}
+    known = [(row, column[name], yes) for row, name, yes in questions if name in column]
+    yes = np.array([answer for _, _, answer in known], dtype=bool)
+    eligible = [
+        i for i in range(len(names)) if labels[:, i].sum() >= 10 and (~labels[:, i]).sum() >= 10
+    ]
+    rows = []
+    for source, features in train.items():
+        fitted = MultiProbes(torch.from_numpy(features).to(device, torch.float64), targets)
+        scores = (
+            fitted.decision(torch.from_numpy(test[source]).to(device, torch.float64)).cpu().numpy()
+        )
+        for block in range(features.shape[1]):
+            recognition = [auroc(scores[:, block, cat], labels[:, cat]) for cat in eligible]
+            picked = np.array([scores[row, block, cat] for row, cat, _ in known])
+            rows.append(
+                {
+                    "source": source,
+                    "block": block,
+                    "region_auroc": float(np.mean(recognition)) if recognition else float("nan"),
+                    "categories": len(eligible),
+                    "boxes": len(test_names),
+                    "missed_auroc": auroc(picked, yes),
+                    "correct_yes": int(yes.sum()),
+                    "missed": int((~yes).sum()),
+                    "correct_yes_score": float(picked[yes].mean()) if yes.any() else float("nan"),
+                    "missed_score": float(picked[~yes].mean()) if (~yes).any() else float("nan"),
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def encoder_regions_task(
+    subject: HuggingFaceSubject,
+    task: str,
+    training: Sequence[tuple[Any, Sequence[tuple[str, list[float]]]]],
+    names: Sequence[str],
+    answers: pd.DataFrame,
+    boxes: Mapping[str, tuple[int, int, list[tuple[str, list[float]]]]],
+    *,
+    limit: int | None = None,
+    data: Path | None = None,
+    registry: Registry | None = None,
+) -> pd.DataFrame:
+    """Read region probes on POPE and the largest kept box of each present question.
+
+    Training contains images and COCO boxes. Answers are rows of prior.margins, joined by id;
+    only positive margins count as yes. Each evaluation image contributes its boxes once,
+    regardless of how many questions ask about it. Largest refers to original box area.
+    """
+    train, train_regions = read_regions(subject, training, "encoder regions train")
+    bound = Task(task, data, registry)
+    items = bound.items(limit)
+    groups = list(dict.fromkeys(item.group for item in items))
+    first = {item.group: item for item in items}
+    test, regions = read_regions(
+        subject,
+        [
+            (lambda g=group: bound.image(first[g]), boxes.get(group, (1, 1, []))[2])
+            for group in groups
+        ],
+        f"encoder regions {task}",
+    )
+    largest: dict[tuple[str, str], int] = {}
+    for row, (index, name, area) in enumerate(regions):
+        key = (groups[index], name)
+        if key not in largest or area > regions[largest[key]][2]:
+            largest[key] = row
+    margins = dict(zip(answers["id"].astype(str), answers["margin"], strict=True))
+    questions = []
+    for item in items:
+        name = object_of(item.prompt)
+        key = (item.group, name)
+        if item.label == "yes" and key in largest and item.id in margins:
+            questions.append((largest[key], name, margins[item.id] > 0))
+    frame = probe_regions(
+        train,
+        [name for _, name, _ in train_regions],
+        test,
+        [name for _, name, _ in regions],
+        questions,
+        names,
     )
     return frame.assign(model=subject.name, task=task)

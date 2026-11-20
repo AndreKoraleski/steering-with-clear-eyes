@@ -169,6 +169,13 @@ uv run swce-diagnose --subject swce.models:llava_15 --prior --encoder --knockout
 They read the COCO 2014 annotations, about 250 MB, and the encoder probe fetches 5000 COCO
 train2014 images. The readings land under `diagnostics/MODEL` in the results folder.
 
+`--encoder-regions` fits category probes on COCO boxes using the same 5000 training images
+(`--encoder-train`). It keeps boxes at least half visible with at least one patch and supports
+LLaVA-1.5. It writes `encoder-regions-TASK.csv`: macro region AUROC over categories with ten
+positive and ten negative boxes, and missed AUROC comparing answered yes with missed present
+objects using their largest kept box, with counts and mean scores. First-token margins are
+reused when `--prior` runs in the same command.
+
 Two more readings take the same command. `--patching` copies the states of a correct no into a
 wrong yes to the same question, block by block, for the image tokens, the object word and the
 answer position, on 200 pairs (`--pairs`). `--attention` measures the norm-weighted attention
