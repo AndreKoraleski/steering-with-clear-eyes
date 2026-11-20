@@ -539,6 +539,125 @@ it hides the same objects under every method, so it does not bias the comparison
   points, 70 are on the count subtask, 23 on position and 10 on existence, while it gains 20 on
   color. Its random control loses 22 on position and 10 on count.
 
+### Where a wrong yes comes from on Qwen3-VL-8B and LLaVA-OneVision-1.5-8B
+
+The same readings of the unmodified `qwen3-vl-8b` and `llava-onevision-1.5-8b` on the 3000
+questions of POPE adversarial, with `swce-diagnose --prior --knockout`, `--encoder`, `--patching`
+and `--attention`, on one A100. Both language models have 36 layers. A wrong yes is counted as
+for LLaVA-1.5-7B, from the margin of the first answer token.
+
+**The language prior.**
+
+| Reading | LLaVA-1.5-7B | Qwen3-VL-8B | OneVision-1.5-8B |
+|---|---|---|---|
+| Wrong yeses among the 1500 absent objects | 507 | 231 | 136 |
+| Yes ratio with the image, and without it | 0.617, 0.817 | 0.521, 0.195 | 0.463, 0.925 |
+| AUROC of the imageless margin for telling wrong yeses from correct noes | 0.71 | 0.66 | 0.45 |
+| AUROC of the co-occurrence, for the same | 0.63 | 0.66 | 0.61 |
+| Wrong yeses, and correct noes, whose imageless margin favours yes | 96%, 86% | 37%, 22% | 93%, 96% |
+| Spearman correlation of the imageless margin and the co-occurrence | 0.01 | 0.24 | 0.00 |
+
+- **The prior points the other way on Qwen3-VL.** Without the image it says yes to only 20% of
+  the questions, so the question alone pushes it to no, and the image raises the yes ratio. Its
+  wrong yeses still fall where the imageless margin is least negative, with an AUROC of 0.66.
+- **OneVision says yes to almost everything without the image**, 92% of the questions, so its
+  prior is the same for the wrong yeses and the correct noes and tells them apart no better than
+  chance. Its wrong yeses come from what the image adds.
+- **Co-occurrence predicts the wrong yeses on all three models**, at 0.61 to 0.66. It is the one
+  reading of the prior that does not depend on the model, and the one that holds across them.
+
+**The vision encoder.** The probes of LLaVA-1.5-7B, on the mean of the image tokens after every
+block of each encoder and after its merger.
+
+| Block of the encoder | 0 | 6 | 12 | 16 | 18 | 19 | 23 | 25 | Merger |
+|---|---|---|---|---|---|---|---|---|---|
+| Qwen3-VL-8B, 27 blocks | 0.59 | 0.70 | 0.79 | 0.83 | 0.85 | 0.86 | 0.87 | 0.87 | 0.88 |
+| OneVision-1.5-8B, 24 blocks | 0.60 | 0.70 | 0.80 | 0.86 | 0.87 | 0.88 | 0.87 | | 0.87 |
+
+- **Both encoders hold the object about as well as CLIP, slightly better.** They reach 0.87 to
+  0.88 at the merger, against 0.83 for LLaVA-1.5-7B, and OneVision answers at an AUROC of 0.94.
+  As for LLaVA, the mean over all tokens is a lower bound on what the encoder holds.
+
+**Attention knockout.** Windows of nine layers, on 200 wrong yeses and 200 correct answers, the
+change being in the margin of yes over no, in nats.
+
+| Model | Route blocked | Layers | Mean change, correct | Flipped, correct | Mean change, wrong yes | Flipped, wrong yes |
+|---|---|---|---|---|---|---|
+| Qwen3-VL | Answer to the image | any window | -1.0 to +0.1 | 0% | -0.3 to +0.1 | 5% or less |
+| Qwen3-VL | Text to the image | 7-15 to 10-18 | -1.0 to -3.2 | 16% to 20% | -5.6 to -6.0 | 48% to 60% |
+| Qwen3-VL | Answer to the text | 15-23 to 22-30 | +7.2 to +11.2 | 40% to 57% | +4.2 to +8.4 | 0% |
+| Qwen3-VL | Answer to the text | 0-8 and 1-9 | +1.0 to +1.9 | 2% or less | +1.4 | 1% or less |
+| OneVision | Answer to the image | any window | 0.0 to +0.1 | 2% or less | -0.1 to +0.1 | 3% or less |
+| OneVision | Text to the image | 5-13 to 7-15 | -0.5 to -0.8 | 18% to 22% | -1.2 to -1.3 | 40% to 45% |
+| OneVision | Text to the image | 16-24 to 18-26 | -0.2 to -0.4 | 5% to 8% | -1.0 to -1.2 | 37% to 48% |
+| OneVision | Answer to the text | 15-23 to 19-27 | +1.0 to +2.0 | 24% to 48% | +0.6 to +1.3 | 0% |
+| OneVision | Answer to the text | 24-32 to 27-35 | -0.4 to -0.6 | 2% | -0.4 to -0.6 | 22% to 25% |
+
+- **On every model the image reaches the answer through the question.** Blocking the answer from
+  the image tokens changes almost nothing, and blocking the question from the image flips about
+  half of the wrong yeses: in layers 7 to 18 on Qwen3-VL, and in two bands, 5 to 15 and 16 to 26,
+  on OneVision. The wrong yeses depend on that route far more than the correct answers do, which
+  says the image is what writes the yes into the question on these models.
+- **The no is read later, in layers 15 to 30.** Closing the answer from the text there moves every
+  margin toward yes and turns up to 57% of the correct answers on Qwen3-VL and 48% on OneVision
+  into yes, as layers 8 to 20 do on LLaVA-1.5-7B. The route is the same, deeper in a deeper model.
+- **The early push to yes of LLaVA-1.5-7B is absent.** Blocking the answer from the text in the
+  first nine layers flips 41% of the wrong yeses of LLaVA-1.5-7B and none on the other two, whose
+  prior gives no such push. On OneVision the last layers play that part instead: blocking the
+  answer from the text in layers 24 to 35 flips about a quarter of its wrong yeses and 2% of the
+  correct answers.
+
+**Activation patching.** Wrong yeses paired with a correct no to the same question whose sequence
+has the same length, 194 pairs of 231 on Qwen3-VL and 108 of 136 on OneVision. The table gives
+the median share of the gap closed.
+
+| Block | 0 | 6 | 10 | 13 | 15 | 17 | 18 | 20 | 22 | 23 | 27 | 35 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Qwen3-VL, image tokens | 0.92 | 0.99 | 0.94 | 0.83 | 0.61 | 0.48 | 0.23 | 0.07 | 0.00 | 0.00 | 0.00 | 0.00 |
+| Qwen3-VL, object word | 0.00 | 0.01 | 0.11 | 0.36 | 0.70 | 0.64 | 0.70 | 0.34 | 0.11 | 0.00 | 0.00 | 0.00 |
+| Qwen3-VL, answer | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.03 | 0.04 | 0.15 | 0.50 | 0.79 | 0.94 | 1.00 |
+| OneVision, image tokens | 1.00 | 0.99 | 0.97 | 0.89 | 0.68 | 0.53 | 0.26 | 0.07 | 0.01 | 0.00 | 0.00 | 0.00 |
+| OneVision, object word | 0.00 | 0.02 | 0.13 | 0.50 | 0.73 | 0.65 | 0.70 | 0.40 | 0.11 | 0.00 | 0.00 | 0.00 |
+| OneVision, answer | 0.00 | 0.00 | 0.00 | 0.00 | 0.00 | 0.01 | 0.04 | 0.23 | 0.58 | 0.78 | 0.88 | 1.00 |
+
+- **The same three steps, at the same depth on both models.** The image tokens carry the answer
+  up to block 16, the object word from block 13 to 21, with a peak of 0.70 to 0.73 at block 15
+  where LLaVA-1.5-7B peaks at 0.54 at block 11, and the answer position from block 20, holding 78% to 79%
+  of the gap by block 23 and all of it by the last block.
+- **The two models, of different makers and with different encoders, agree to the block.** Both
+  language models derive from Qwen3-8B, so the agreement says where that language model decides,
+  whatever encoder feeds it.
+- **A wrong yes is settled later than on LLaVA-1.5-7B.** The answer position holds 88% to 94% of
+  the gap by block 27 of 36, where it holds 90% by block 16 of 32 on LLaVA-1.5-7B, and the object
+  word holds more of it on its own.
+- **DeepStack shows at block 0.** Copying the image tokens at block 0 closes 92% of the gap on
+  Qwen3-VL and all of it on OneVision, which has no DeepStack. The reinjected features of the
+  hallucinating image make up the rest.
+
+**Norm-weighted attention.** No image is cropped, so all 1351 present objects with a COCO box
+are wholly visible on both models.
+
+- **On Qwen3-VL a wrong yes looks at the image more, later and less than on LLaVA-1.5-7B.**
+  Between layers 21 and 28 the answer position puts 13.3% of its weighted attention on the image
+  for a wrong yes against 11.2% for a correct no, an AUROC of 0.80, and 5.3% against 4.0% on the
+  other objects (AUROC 0.62). Below layer 19 the shares of all answers agree to the third
+  decimal.
+- **On OneVision the difference is larger and runs to the output.** Between layers 21 and 28 a
+  wrong yes puts 16.7% of its weighted attention on the image against 13.1% for a correct no, an
+  AUROC of 0.86, and 9.3% against 6.7% on the other objects (AUROC 0.67). Up to layer 20 the
+  shares agree, and the image takes up to 45% of the attention of a wrong yes at layer 33.
+- **On all three models a wrong yes reads more of the image where the answer is decided**, in
+  layers 14 to 21 on LLaVA-1.5-7B and 21 to 28 on the other two, the blocks where patching moves
+  the answer to its own position. It also reads more of the objects that are there, which fits
+  the role of co-occurrence. The shares are correlational.
+
+All four readings name the same route on the three models: the image is written into the
+question, the object word carries the answer for a few blocks, and the answer position reads it.
+The language models of Qwen3-VL and OneVision decide about seven blocks later than LLaVA-1.5-7B,
+deeper also in the share of their layers, and their wrong yeses do not lean on the early reading
+of the question that those of LLaVA-1.5-7B lean on, so a layer chosen on LLaVA-1.5-7B does not
+fall on the same step of these two.
+
 ### Sparse autoencoders on four blocks
 
 `swce-sae` trained TopK autoencoders of 32768 latents, with 64 kept per state, on blocks 9, 13,
