@@ -808,7 +808,12 @@ whole of POPE adversarial, RePOPE, CHAIR and MME. Its scores are in `results/lea
   comes from its directions, not from the size of the edit.
 - **POPE answers grow longer under every method.** Their budget is 64 tokens, which 1940 of the
   3000 unmodified answers already reach, as Qwen3-VL explains its answer. VTI raises that to
-  2995, REVIS to 2895 and its control to 2797.
+  2995, REVIS to 2895 and its control to 2797, and the VTI control leaves it at 1742. Asked for one word, as below, the
+  unmodified model scores as it does here, so its long answers are parsed as it meant them; the
+  bold negation of the REVIS control is the one case found where they are not. MME answers stay short:
+  between 4 and 25 of the 2374 reach the limit per condition, the parser of MME, which reads
+  their first four characters, finds neither yes nor no in at most 14, and the parsed answer
+  disagrees with the more probable first token on 24 to 34, which sampling explains.
 - **The F1 of the REVIS control is an artefact of the official parser.** Its POPE answers often
   bold the negation, as in "there is **not** a car". The official parser reads an answer as no
   only on the bare words `No`, `not` or `no`, so it reads these as yes: 82.1% of the answers,
