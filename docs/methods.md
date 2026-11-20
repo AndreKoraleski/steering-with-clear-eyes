@@ -800,10 +800,9 @@ whole of POPE adversarial, RePOPE, CHAIR and MME. Its scores are in `results/lea
 - **The gains on CHAIR come from broken descriptions.** VTI and REVIS lower CHAIR_S to 9.4 and
   3.0, but nearly all of their descriptions run to the token limit and the recall falls from
   0.765 to 0.345 and 0.304. Truncating the unmodified descriptions to the same recall gives a
-  CHAIR_S of 7.8 and 3.4, so the shortcut matches both gains. Under VTI, 424 of the 500
-  descriptions put a line break after nearly every word and 202 end in a loop. Under REVIS, 388
-  end in a loop of a repeated word, such as "actually". A description that names few objects
-  hallucinates few, so these CHAIR scores are not comparable with the unmodified one.
+  CHAIR_S of 7.8 and 3.4, so the shortcut matches both gains. The check below finds that 330
+  descriptions of VTI and 445 of REVIS loop or fragment, so neither CHAIR row is comparable with
+  the unmodified one.
 - **The VTI control keeps the text fluent and changes nothing.** Its descriptions keep their
   length and recall and its CHAIR_S of 49.6 is matched by the shortcut, so the break under VTI
   comes from its directions, not from the size of the edit.
@@ -816,6 +815,40 @@ whole of POPE adversarial, RePOPE, CHAIR and MME. Its scores are in `results/lea
   against 57.5% by the first-token probabilities. The control does shift answers toward yes, 164
   questions by the first token, but most of the fall in F1, and in d', which is computed from the
   parsed answers, comes from the parser. Its AUROC is that of the unmodified model.
+
+### Loops at the token limit on Qwen3-VL-8B
+
+The check of LLaVA-OneVision-1.5-8B ran on the descriptions of the five conditions, unchanged. A
+description loops when its last 300 characters repeat a period of at most 80 characters at 85%
+of their positions, or when it ends in a sequence of at most 20 words repeated three times or
+more. It is fragmented, if it does not loop, when the lines of those characters hold at most two
+words, or when letters make up less than 35% of them. CHAIR is then computed again without
+those descriptions.
+
+| Condition | At the limit of 512 tokens | Loops | Fragmented | CHAIR_S, all 500 | CHAIR_S without its own | Images without a loop in it or the unmodified model | Change from unmodified on those |
+|---|---|---|---|---|---|---|---|
+| Unmodified | 53 | 1 | 0 | 53.2 | 53.3 | | |
+| VTI | 500 | 230 | 100 | 9.4 | 4.1 | 169 | -45.6 [-53.3, -37.9] |
+| VTI control | 56 | 1 | 0 | 49.6 | 49.7 | 498 | -3.8 [-7.8, +0.0] |
+| REVIS | 492 | 445 | 0 | 3.0 | 9.1 | 55 | -34.5 [-49.1, -18.2] |
+| REVIS control | 172 | 8 | 0 | 56.0 | 56.1 | 491 | +2.4 [-2.4, +7.3] |
+
+Intervals are bootstrap intervals over the images, paired with the unmodified model. Only 22
+images are free of loops and fragments under all five conditions, too few to compare on, so each
+condition is compared with the unmodified model on the images where neither breaks.
+
+- **VTI and REVIS are not comparable.** VTI loops on a blank line followed by "The", or breaks
+  into single words, on 330 of its 500 descriptions, and REVIS repeats a word such as "actually"
+  to the limit on 445. Their other descriptions still run to the limit, name a third of the
+  objects the unmodified model names, and lower CHAIR as the recall shortcut predicts. Their
+  CHAIR rows on the leaderboard, and the `beyond_control` of each method on CHAIR, are not
+  reported as gains.
+- **The controls are confirmed.** The VTI control loops once, on a repeated list item, and the REVIS
+  control 8 times, on lists such as "C. C. C." or "insulated, insulated". Without them their
+  CHAIR_S moves by at most 0.1 point. The 164 other descriptions of the REVIS control that reach
+  the limit do so in ordinary prose.
+- **The unmodified model loops once,** on "pineapples, pineapples", and reaches the limit 53 times
+  in ordinary prose, so its row stands.
 
 ### Why REVIS behaves so on Qwen3-VL-8B
 
