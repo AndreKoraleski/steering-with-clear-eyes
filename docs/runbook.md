@@ -171,7 +171,13 @@ train2014 images. The readings land under `diagnostics/MODEL` in the results fol
 
 `--encoder-regions` fits category probes on COCO boxes using the same 5000 training images
 (`--encoder-train`). It keeps boxes at least half visible with at least one patch and supports
-LLaVA-1.5. It writes `encoder-regions-TASK.csv`: macro region AUROC over categories with ten
+LLaVA-1.5, Qwen3-VL-8B and LLaVA-OneVision-1.5-8B (one still image, `grid_t == 1`).
+LLaVA-1.5 reads patch i at encoder token i+1, excluding CLIP's class token, and projector token i.
+For the resized models, cells are row-major over the merged grid. Cell i pools encoder patches
+`i*m*m` through `(i+1)*m*m-1`, where m is the spatial merge size, with an additional offset of
+one for OneVision's RICE class token. Neither tower permutes these patch groups; both projectors
+read merged token i directly. Unsupported layouts or token counts raise an error.
+It writes `encoder-regions-TASK.csv`: macro region AUROC over categories with ten
 positive and ten negative boxes, and missed AUROC comparing answered yes with missed present
 objects using their largest kept box, with counts and mean scores. First-token margins are
 reused when `--prior` runs in the same command.

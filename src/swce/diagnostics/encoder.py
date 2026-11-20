@@ -296,6 +296,52 @@ def region_cells(
     return kept
 
 
+def _merged_region_indices(
+    cells: Sequence[Sequence[int]], merge: int, offset: int
+) -> list[list[int]]:
+    """Expand merged cells into contiguous patch groups, after any class token."""
+    return [
+        [index * merge**2 + patch + offset for index in cell for patch in range(merge**2)]
+        for cell in cells
+    ]
+
+
+def _resized_region_offset(
+    subject: HuggingFaceSubject, inputs: Mapping[str, Tensor], grid: ResizedGrid
+) -> int:
+    """Validate an unpermuted merged vision tower and locate its first patch token."""
+    shape = inputs.get("image_grid_thw")
+    if shape is None or shape.shape != (1, 3) or shape.tolist()[0] != [1, grid.rows, grid.columns]:
+        raise ValueError("Encoder regions require one still image with matching image_grid_thw")
+    if (
+        min(grid.rows, grid.columns, grid.merge) <= 0
+        or grid.rows % grid.merge
+        or grid.columns % grid.merge
+    ):
+        raise ValueError("Encoder regions require a positive grid divisible by spatial_merge_size")
+    projector = subject.projector()
+    blocks = list(subject.encoder_layers())
+    for tower in subject.model.modules():
+        if projector is None or getattr(tower, "merger", None) is not projector:
+            continue
+        if (
+            list(getattr(tower, "blocks", [])) != blocks
+            or getattr(tower, "spatial_merge_size", None) != grid.merge
+            or getattr(tower, "patch_size", None) != grid.patch
+            or not hasattr(tower, "patch_embed")
+            or getattr(tower, "window_size", None) is not None
+        ):
+            break
+        if isinstance(getattr(tower, "class_embedding", None), Tensor):
+            if hasattr(tower, "class_pos_emb") and hasattr(tower, "pre_layernorm"):
+                return 1
+            break
+        if hasattr(tower, "deepstack_merger_list") and hasattr(tower, "pos_embed"):
+            return 0
+        break
+    raise ValueError("Cannot map encoder regions: unsupported merged vision tower layout")
+
+
 def region_features(
     subject: HuggingFaceSubject,
     inputs: Mapping[str, Tensor],
@@ -306,14 +352,16 @@ def region_features(
 
     LLaVA-1.5 CLIP blocks include a class token at zero: grid cell i reads token i+1.
     Its projector has only patch tokens and reads cell i directly. Unlike image_features,
-    region pooling excludes the class token. Resized encoders such as Qwen3-VL reorder and
-    merge patches; their encoder layout is unsupported even though ResizedGrid maps their
-    language model tokens. Unknown layouts raise ValueError rather than guessing offsets.
+    region pooling excludes the class token. Qwen3-VL-8B and LLaVA-OneVision-1.5-8B use
+    ResizedGrid cells in row-major merged-grid order. Cell i reads the contiguous encoder
+    patches i*m*m through (i+1)*m*m-1, with an offset of one for RICE's leading class token,
+    and projector token i. Only one still image (grid_t == 1) is supported. Unknown layouts
+    and mismatched token counts raise ValueError rather than guessing offsets.
 
     Args:
         subject: Model whose encoder is read.
         inputs: Processed inputs for one image.
-        cells: Patch indices of each region, in row-major order.
+        cells: Grid cell indices of each region, in row-major order, merged for ResizedGrid.
         grid: Geometry used to map the boxes to cells.
 
     Returns:
@@ -321,25 +369,27 @@ def region_features(
         or None when no projector is named, in single precision on the processor.
     """
     model: Any = subject.model
-    if not isinstance(grid, Grid) or model.config.model_type != "llava":
-        raise ValueError(
-            "Encoder regions support LLaVA-1.5 CLIP only; merged patches cannot be mapped"
-        )
-    count = grid.side**2
+    if isinstance(grid, Grid) and model.config.model_type == "llava":
+        count, merge, offset = grid.side**2, 1, 1
+    elif isinstance(grid, ResizedGrid):
+        offset = _resized_region_offset(subject, inputs, grid)
+        merge = grid.merge
+        count = grid.rows * grid.columns // merge**2
+    else:
+        raise ValueError("Cannot map encoder regions: unsupported vision tower layout")
     if not cells or any(not cell or min(cell) < 0 or max(cell) >= count for cell in cells):
         raise ValueError("Region cells must be nonempty and inside the patch grid")
+    encoder_cells = _merged_region_indices(cells, merge, offset)
 
     def pool(state: Tensor, source: str) -> Tensor:
-        offset = int(source == "encoder")
-        if state.shape[0] != count + offset:
+        expected = count * merge**2 + offset if source == "encoder" else count
+        if state.shape[0] != expected:
             raise ValueError(
-                f"Cannot map {source} tokens: expected {count + offset}, got {state.shape[0]}"
+                f"Cannot map {source} tokens: expected {expected}, got {state.shape[0]}"
             )
+        indices = encoder_cells if source == "encoder" else cells
         return torch.stack(
-            [
-                state[torch.as_tensor(cell, device=state.device) + offset].mean(dim=0)
-                for cell in cells
-            ]
+            [state[torch.as_tensor(cell, device=state.device)].mean(dim=0) for cell in indices]
         )
 
     encoder, projector = _image_features(subject, inputs, pool)
