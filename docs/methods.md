@@ -359,10 +359,55 @@ are in `results/leaderboard.csv`.
   at block 19, and stays near 0.94 to the output, under every method. It reads the expected answer
   and not whether the answer of the model is right.
 - **REVIS changes the stream from block 21 on**, the block its calibration selected, and leaves
-  the blocks below it as they were. Why its gate opens there without moving any answer of POPE is
-  issue #19.
+  the blocks below it as they were. Why its gate opens there without moving POPE is below.
 
 Lengths are in words, as `results/leaderboard.csv` reports them.
+
+### Why REVIS behaves so on LLaVA-OneVision-1.5-8B
+
+The port follows the official code at commit `75f4d29`, as on LLaVA-1.5-7B. Here the vectors are
+computed by the recipe and not released, and the calibration selects block 21 with a threshold of
+-0.073. The gate therefore opens wherever the cosine between the residual stream and the vector is
+below 0.073. The readings below come from the output of block 21 before the vector is added, which
+the steering cannot change. They were taken from a pass without steering, and for CHAIR from the
+descriptions of each condition read again.
+
+- **The gate sits at the edge of the states it reads.** At the last token of a POPE question the
+  cosine is 0.066 with a standard deviation of 0.007, so the gate opens on 86% of the questions,
+  83% of those whose answer is yes and 90% of those whose answer is no. MME questions end in
+  "Please answer yes or no.", which raises the cosine to 0.092, and the gate opens on 2 of their
+  2374. In the prompt it opens on 2% of the image tokens and 19% of the other tokens of POPE. In
+  CHAIR it opens at the first token of every description and at about 30% of the later ones,
+  under every condition.
+- **The vector is orthogonal to the answer.** At block 21 its cosine with the difference between
+  the mean states of the questions answered yes and answered no is 0.001, and its cosine with the
+  difference of the output rows of yes and no is -0.011. At strength 2.5 it has a norm of 89
+  against 117 for the stream at the last token, which is the shift of 0.64. Read directly by the
+  final normalization and the output head, it would lower the log odds of yes by 2.4. After the
+  remaining fourteen blocks the log odds move by 0.21 at the median on the first 50 images. On
+  the whole of POPE adversarial, 27 of 3000 answers change, 16 from yes to no and 11 from no to
+  yes, 15 to the right answer and 12 to the wrong one, so the yes ratio stays put.
+- **A stronger vector breaks the answer before it moves it.** On the first 50 images, strength 10
+  flips 64 of 300 first tokens and strength 25 flips 121, mostly to tokens that are neither yes
+  nor no, such as "...", "-" and a blank line. Accuracy falls from 0.877 to 0.743 and then to
+  0.560. The vector carries no direction that turns a yes into a no, at any strength.
+- **REVIS shortens the descriptions it gates.** The descriptions of REVIS run to 123 tokens against
+  176, with a gate open at their first token and at a third of the others, and name fewer
+  objects. This is the recall shortcut above. Only 1.9 points of CHAIR_S are beyond it.
+- **The sign of the vectors is consistent from block 15 upward.** Every computed visual vector has
+  a cosine between 0.45 and 0.94 with the one of the index below from hidden state index 16 to 36.
+  Below index 16 the sign alternates, which the calibration never reaches. Unlike the vectors
+  released for LLaVA-1.5-7B, no flip lies near the selected block. Each vector is the first
+  principal component of samples that PCA centers, so it follows the variance of what the image
+  adds to a description and not its mean. At index 22 its cosine with that mean is -0.12.
+- **The gate of the control is always open.** The cosine of a random vector with any state has a
+  standard deviation of 1 over the square root of 4096, which is 0.016, so it is always below
+  0.073. The control adds a vector of norm 89 at every position, image tokens included, on every
+  task. It changes 77 POPE answers, 66 of them from yes to no, and 97 of the 2374 MME answers.
+- **The long descriptions of the control drift and do not loop.** 186 of its 500 descriptions run
+  to the token limit of 512, but none of them ends in a repeated word or phrase. They leave the
+  image and continue as essays, for instance "the image serves as a reminder of the power of
+  photography".
 
 ### Where a wrong yes comes from
 
