@@ -23,6 +23,9 @@ results/*/smoke/
 # Readings of every item, kept beside their summaries
 results/*/diagnostics/*/*/
 
+# Slurm's initial log; the Qwen job stores its other outputs outside the repository.
+/swce-qwen3-*.out
+
 # Coverage data
 .coverage
 
