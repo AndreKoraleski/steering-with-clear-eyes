@@ -428,15 +428,38 @@ def test_region_probes_recognize_separable_categories() -> None:
 
 
 def test_encoder_regions_task_reads_boxes_and_margins(monkeypatch: pytest.MonkeyPatch) -> None:
+    from collections.abc import Iterator
+    from contextlib import contextmanager
     from types import SimpleNamespace
 
+    from swce.diagnostics import encoder as encoder_module
     from swce.diagnostics.attention import Grid
     from swce.diagnostics.encoder import encoder_regions_task
+    from swce.diagnostics.probe import released
     from swce.tasks.task import Task
 
     subject = tiny_llava()
+    original = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    subject.model.to(original)
+    original = next(subject.model.parameters()).device
+    calls = []
+
+    @contextmanager
+    def counted(model: HuggingFaceSubject) -> Iterator[None]:
+        calls.append(model)
+        with released(model):
+            assert {p.device.type for p in model.model.parameters()} == {"cpu"}
+            yield
+
+    monkeypatch.setattr(encoder_module, "released", counted)
     monkeypatch.setattr(HuggingFaceSubject, "template", lambda self, prompt: "template")
-    monkeypatch.setattr(subject, "inputs", lambda image, text: tiny_inputs(subject))
+    monkeypatch.setattr(
+        subject,
+        "inputs",
+        lambda image, text: {
+            key: value.to(original) for key, value in tiny_inputs(subject).items()
+        },
+    )
     monkeypatch.setattr(Grid, "of", classmethod(lambda cls, subject: Grid(28, 28, 14)))
     image = Image.new("RGB", (28, 28))
     boxes = [(name, [0.0, 0.0, 14.0, 14.0]) for name in ["dog", "cat"] * 10]
@@ -460,6 +483,7 @@ def test_encoder_regions_task_reads_boxes_and_margins(monkeypatch: pytest.Monkey
         ["dog", "cat"],
         answers,
         {"image": (28, 28, boxes)},
+        per_category=2,
     )
     assert set(frame["source"]) == {"encoder", "projector"}
     assert len(frame) == 4
@@ -469,6 +493,9 @@ def test_encoder_regions_task_reads_boxes_and_margins(monkeypatch: pytest.Monkey
     assert frame["missed"].tolist() == [1] * 4
     assert frame["boxes"].tolist() == [21] * 4
     assert not frame.isna().any().any()
+
+    assert calls == [subject]
+    assert all(p.device == original for p in subject.model.parameters())
 
 
 @pytest.mark.parametrize("rows, columns", [(2, 2), (4, 6), (6, 4)])
@@ -629,3 +656,29 @@ def test_resized_regions_reject_unknown_tower_and_indivisible_grid() -> None:
         region_features(subject, inputs, [[0]], ResizedGrid(3, 2, 14, 2))
     with pytest.raises(ValueError, match="unsupported merged"):
         region_features(subject, tiny_inputs(subject), [[0]], ResizedGrid(2, 2, 14, 1))
+
+
+def test_read_regions_caps_each_category_deterministically(monkeypatch: pytest.MonkeyPatch) -> None:
+    from collections import Counter
+
+    from swce.diagnostics.attention import Grid
+    from swce.diagnostics.encoder import read_regions
+
+    subject = tiny_llava()
+    inputs = tiny_inputs(subject)
+    monkeypatch.setattr(HuggingFaceSubject, "template", lambda self, prompt: "template")
+    monkeypatch.setattr(subject, "inputs", lambda image, text: inputs)
+    monkeypatch.setattr(Grid, "of", classmethod(lambda cls, subject: Grid(28, 28, 14)))
+    image = Image.new("RGB", (28, 28))
+    boxes = [("dog", [0.0, 0.0, 14.0, 14.0]), ("cat", [0.0, 0.0, 28.0, 28.0])]
+    training = [(image, boxes)] * 5
+    first, regions = read_regions(subject, training, "train", per_category=2)
+    second, repeated = read_regions(subject, training, "train", per_category=2)
+    assert regions == repeated
+    assert Counter(name for _, name, _ in regions) == {"dog": 2, "cat": 2}
+    assert [index for index, _, _ in regions] == [0, 0, 1, 1]
+    for source in first:
+        np.testing.assert_array_equal(first[source], second[source])
+        assert first[source].shape[0] == 4
+    _, uncapped = read_regions(subject, training, "evaluation")
+    assert len(uncapped) == 10

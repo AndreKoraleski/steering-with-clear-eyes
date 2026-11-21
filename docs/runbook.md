@@ -170,7 +170,14 @@ They read the COCO 2014 annotations, about 250 MB, and the encoder probe fetches
 train2014 images. The readings land under `diagnostics/MODEL` in the results folder.
 
 `--encoder-regions` fits category probes on COCO boxes using the same 5000 training images
-(`--encoder-train`). It keeps boxes at least half visible with at least one patch and supports
+(`--encoder-train`). `--encoder-regions-per-category` defaults to 300, keeping the first
+eligible training boxes per category in image and annotation order deterministically, before
+pooling and stacking features. POPE evaluation regions are not capped. At most 80 * 300 = 24 000
+training regions with 27 blocks and 1152 dimensions in double precision use
+24 000 * 27 * 1152 * 8 = 5 971 968 000 bytes, about 6 GB (5.56 GiB) for the feature tensor.
+The model waits on the processor during probe fitting and scoring, leaving room for fitting
+on a 24 GB card, and is restored afterwards. `--encoder` also releases the model during fitting.
+It keeps boxes at least half visible with at least one patch and supports
 LLaVA-1.5, Qwen3-VL-8B and LLaVA-OneVision-1.5-8B (one still image, `grid_t == 1`).
 LLaVA-1.5 reads patch i at encoder token i+1, excluding CLIP's class token, and projector token i.
 For the resized models, cells are row-major over the merged grid. Cell i pools encoder patches
