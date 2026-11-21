@@ -1,0 +1,24 @@
+\begin{table*}[t]\centering\small
+\caption{CHAIR e MME na mesma configuração. CHAIR em proporções; comprimento médio em palavras, não tokens. Ciclos/fragmentos são contagens do relato metodológico; traço significa contagem não documentada. L: comprometido por ciclos; R: queda de CHAIR exige controle de recall; LR: ambos. As linhas L ou LR não sustentam uma comparação direta de qualidade. Valores numéricos da avaliação vêm do CSV.}
+\label{tab:chair}\begin{tabular}{llrrrrrrl}\toprule
+Modelo & Condição & CHAIR$_S$ [IC] & CHAIR$_I$ & Recall & Palavras & MME total & Ciclos/frag. & Ressalva \\ \midrule
+LLaVA & Original & 0,502 [0,460; 0,548] & 0,141 & 0,808 & 91,4 & 1769 & --- & --- \\
+LLaVA & REVIS b31 & 0,602 [0,560; 0,648] & 0,192 & 0,826 & 114,3 & 1466 & --- & --- \\
+LLaVA & REVIS b30 & 0,320 [0,280; 0,360] & 0,106 & 0,646 & 81,2 & 1812 & 14 & LR \\
+LLaVA & REVIS aleat. b31 & 0,502 [0,460; 0,548] & 0,141 & 0,808 & 91,4 & 1769 & --- & --- \\
+LLaVA & REVIS aleat. b30 & 0,254 [0,220; 0,292] & 0,096 & 0,644 & 83,2 & 1768 & 181 & LR \\
+LLaVA & VTI CHAIR & 0,366 [0,324; 0,410] & 0,111 & 0,759 & 71,3 & 1757 & --- & R \\
+LLaVA & VTI aleat. CHAIR & 0,436 [0,394; 0,484] & 0,133 & 0,789 & 86,9 & 1758 & --- & --- \\
+\midrule
+OneVision & Original & 0,334 [0,292; 0,374] & 0,087 & 0,680 & 168,6 & 2280 & 0 & --- \\
+OneVision & REVIS & 0,256 [0,220; 0,296] & 0,073 & 0,633 & 118,3 & 2266 & 0 & R \\
+OneVision & REVIS aleat. & 0,384 [0,344; 0,430] & 0,086 & 0,626 & 380,6 & 2285 & 0 & --- \\
+OneVision & VTI & 0,344 [0,302; 0,388] & 0,070 & 0,662 & 304,1 & 2229 & 131 & L \\
+OneVision & VTI aleat. & 0,374 [0,328; 0,416] & 0,085 & 0,699 & 194,6 & 2262 & 0 & --- \\
+\midrule
+Qwen & Original & 0,532 [0,486; 0,576] & 0,097 & 0,765 & 385,7 & 2403 & 1 & --- \\
+Qwen & REVIS & 0,030 [0,016; 0,046] & 0,030 & 0,278 & 495,8 & 2365 & 445 & LR \\
+Qwen & REVIS aleat. & 0,560 [0,516; 0,604] & 0,113 & 0,740 & 429,4 & 2396 & 8 & --- \\
+Qwen & VTI & 0,094 [0,068; 0,118] & 0,039 & 0,345 & 140,7 & 2382 & 330 & LR \\
+Qwen & VTI aleat. & 0,496 [0,452; 0,540] & 0,094 & 0,768 & 379,1 & 2390 & 1 & --- \\
+\bottomrule\end{tabular}\end{table*}

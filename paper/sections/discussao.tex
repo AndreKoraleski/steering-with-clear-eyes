@@ -1,0 +1,18 @@
+\section{Discussão}
+\subsection{O que os dados sustentam}
+As respostas às perguntas centrais são complementares. Q1 identifica reduções pontuais de alucinação em algumas configurações, sobretudo em CHAIR, mas não uma melhora consistente em presença de objetos. Q2 mostra que parte dessas reduções se explica por decisão, extensão ou degeneração, e que capacidade não pode ser presumida preservada. Q3 localiza uma rota comum de processamento, com profundidade e dependências linguísticas diferentes entre modelos, sem encontrar aumento sistemático da informação decodificável sob os métodos.
+
+A ausência de efeito binário de REVIS b31 no POPE de LLaVA é particularmente informativa: uma intervenção que só atua após o token que fixa a decisão não muda essa decisão inicial. Essa afirmação deve ser restrita à decisão pelo primeiro token. Um extrator que lê uma sentença pode mudar o rótulo por alterações posteriores, como ocorreu com as negações formatadas do controle de REVIS em Qwen. Por isso, a margem e a resposta efetivamente extraída precisam ser apresentadas separadamente.
+
+Também não há uma regra geral segundo a qual aumentar atenção à imagem corrigiria alucinação. Os falsos positivos se associam a maior atenção ponderada à imagem e aos objetos presentes, enquanto a coocorrência prediz erros nos três modelos. As intervenções causais sobre rotas mostram que a imagem pode alimentar tanto respostas corretas quanto afirmações de objetos plausíveis e ausentes.
+
+\subsection{Interpretações e implicações}
+A concordância entre patching, knockout e sondas sugere que parte do problema está em como a evidência visual é incorporada à pergunta e lida para a resposta, e não simplesmente em informação apagada nas últimas camadas. A alta discriminação nas regiões reforça a disponibilidade de informação visual local, mas não autoriza concluir que todo falso positivo nasce exclusivamente no decodificador: não existem regiões verdadeiras para um objeto ausente, e as sondas resolvem outra tarefa.
+
+O deslocamento tardio da decisão em OneVision e Qwen é compatível com a origem comum de seus modelos de linguagem. Uma camada escolhida por índice absoluto em LLaVA pode atingir outra etapa nesses modelos. Para futuras receitas, selecionar uma camada pela função observada no processamento parece uma hipótese mais bem motivada do que transportar o índice; este estudo, porém, não testa nem otimiza tal regra.
+
+Os controles também têm alcance definido. VTI aleatório separa parte do efeito da perturbação do conteúdo aprendido. Em REVIS, mudar o vetor muda a distribuição do risco: o controle de b31 em LLaVA não abre a porta no protocolo principal, enquanto controles nos outros limiares podem intervir quase sempre. A comparação expõe uma fragilidade da receita, mas não isola perfeitamente semântica e frequência de intervenção.
+
+Para avaliar steering, os resultados apoiam relatar conjuntamente F1, yes ratio, AUROC, cobertura, comprimento, falhas de geração e custo de capacidade. A não inferioridade em MME deve ser uma evidência própria, não uma conclusão derivada da ausência de significância de uma perda. Da mesma forma, uma queda estatisticamente convincente de CHAIR pode continuar semanticamente inválida quando o texto deixa de descrever a imagem.
+
+Há ainda um estudo exploratório com \textit{sparse autoencoders}, autoencodificadores esparsos, em LLaVA-1.5. Ele permanece preliminar e fora das perguntas centrais; não usamos suas leituras como resultados deste artigo. Como trabalho futuro, sua interpretação requer primeiro estabilidade entre treinamentos e validação causal independente.

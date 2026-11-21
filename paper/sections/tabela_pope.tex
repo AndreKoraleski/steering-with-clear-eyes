@@ -1,0 +1,26 @@
+\begin{table*}[t]
+\centering\small
+\caption{POPE adversarial como publicado e RePOPE. Valores do CSV; IC de 95\% para F1 de POPE. ``Aleat.' designa o controle aleatório. Em OneVision e Qwen, os métodos usam \texttt{code-default}. O asterisco identifica o artefato do extrator discutido no texto.}
+\label{tab:pope}
+\begin{tabular}{llrrrrrr}
+\toprule Modelo & Condição & F1 POPE [IC] & Sim & AUROC & $d'$ & F1 RePOPE & AUROC RePOPE \\ \midrule
+LLaVA & Original & 0,802 [0,791; 0,813] & 0,617 & 0,907 & 1,68 & 0,805 & 0,946 \\
+LLaVA & REVIS b31 & 0,802 [0,791; 0,813] & 0,617 & 0,907 & 1,68 & 0,805 & 0,946 \\
+LLaVA & REVIS b30 & 0,787 [0,778; 0,796] & 0,689 & 0,907 & 1,66 & 0,770 & 0,946 \\
+LLaVA & REVIS aleat. b31 & 0,802 [0,791; 0,813] & 0,617 & 0,907 & 1,68 & 0,805 & 0,946 \\
+LLaVA & REVIS aleat. b30 & 0,795 [0,785; 0,805] & 0,664 & 0,907 & 1,68 & 0,784 & 0,946 \\
+LLaVA & VTI POPE & 0,807 [0,797; 0,818] & 0,579 & 0,898 & 1,69 & 0,817 & 0,934 \\
+LLaVA & VTI aleat. POPE & 0,808 [0,796; 0,819] & 0,590 & 0,907 & 1,70 & 0,814 & 0,943 \\
+\midrule
+OneVision & Original & 0,866 [0,853; 0,878] & 0,462 & 0,942 & 2,29 & 0,914 & 0,974 \\
+OneVision & REVIS & 0,867 [0,854; 0,879] & 0,461 & 0,942 & 2,31 & 0,916 & 0,974 \\
+OneVision & REVIS aleat. & 0,862 [0,850; 0,874] & 0,442 & 0,940 & 2,35 & 0,915 & 0,977 \\
+OneVision & VTI & 0,863 [0,850; 0,875] & 0,488 & 0,941 & 2,20 & 0,908 & 0,972 \\
+OneVision & VTI aleat. & 0,869 [0,856; 0,881] & 0,474 & 0,941 & 2,29 & 0,916 & 0,974 \\
+\midrule
+Qwen & Original & 0,871 [0,859; 0,884] & 0,507 & 0,942 & 2,25 & 0,912 & 0,983 \\
+Qwen & REVIS & 0,869 [0,856; 0,881] & 0,506 & 0,942 & 2,24 & 0,910 & 0,982 \\
+Qwen & REVIS aleat.* & 0,706 [0,698; 0,714] & 0,821 & 0,941 & 0,94 & 0,682 & 0,983 \\
+Qwen & VTI & 0,848 [0,835; 0,859] & 0,578 & 0,942 & 2,06 & 0,863 & 0,980 \\
+Qwen & VTI aleat. & 0,863 [0,850; 0,875] & 0,526 & 0,941 & 2,17 & 0,901 & 0,983 \\
+\bottomrule\end{tabular}\end{table*}

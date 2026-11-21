@@ -1,0 +1,84 @@
+\section{Metodologia}
+\subsection{Protocolo e modelos}
+Adotamos um protocolo \textit{out-of-the-box}, ou uso sem ajuste local: valores publicados para o modelo são mantidos; direções, camadas e limiares são obtidos pela própria receita; parâmetros sem valor publicado nem regra de derivação usam o padrão do código oficial, identificado como \texttt{code-default}. Isso mede o que se obtém ao aplicar a receita, não o melhor resultado possível após otimização no novo modelo.
+
+As intervenções são reimplementações do código oficial, com testes de equivalência das operações, e não execuções integrais dos ambientes originais. Usamos modelos congelados via Transformers, sem quantização, com seus próprios modelos de conversa e as configurações de geração distribuídas. Essa interface comum mantém os itens e a avaliação iguais entre métodos; suas diferenças em relação aos ambientes originais são parte do protocolo, não evidência de uma reprodução integral dos artigos.
+
+LLaVA-1.5-7B é o caso com configurações publicadas; OneVision e Qwen3-VL testam a transferência das receitas para modelos não cobertos. Os dois últimos também permitem examinar a relação entre codificadores diferentes e decodificadores derivados de Qwen3-8B. A Tabela~\ref{tab:modelos} explicita diferenças que afetam a intervenção. Os índices de blocos usados neste artigo começam em zero.
+
+\begin{table}[t]
+\centering\small
+\caption{Modelos e geração preservada do checkpoint.}
+\label{tab:modelos}
+\setlength{\tabcolsep}{5pt}
+\begin{tabular}{lccp{3.0cm}}
+\toprule
+Modelo & Blocos & Tokens visuais & Geração \\
+\midrule
+LLaVA-1.5 & 32 & 576 & Gulosa \\
+OneVision & 36 & Variáveis & Amostragem, temperatura $0{,}000001$; penalidade de repetição $1{,}05$ \\
+Qwen3-VL & 36 & Variáveis & Temperatura $0{,}7$; top-p $0{,}8$; top-k 20 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Reinicializamos o estado aleatório com semente zero antes de cada geração para tornar as comparações repetíveis em uma mesma máquina. Preservar a amostragem evita transformar o checkpoint em outra condição de geração, mas não estima a variabilidade entre sementes.
+
+\subsection{Métodos, receitas e controles}
+VTI usa o código de referência \texttt{bb5dfee}, com forças visual/textual de $0{,}2/0{,}4$ em CHAIR e $0{,}9/0{,}9$ nas demais tarefas de LLaVA. O ajuste utiliza 50 demonstrações e 50 máscaras que removem 99\% dos patches; a seleção usa um gerador próprio com semente 42, pois a amostra original, dependente do estado aleatório após carregar o modelo, não é recuperável. Mantemos comportamentos do código que afetam as direções: diferença média somada ao primeiro componente principal, pergunta da última demonstração reutilizada e reorganização dos estados visuais sem permutação prévia. O fator adicional de $0{,}1$ aplicado pelo código também é preservado, para avaliar a implementação distribuída.
+
+Nos modelos novos, VTI utiliza força textual $0{,}8$, o padrão oficial. A ramificação visual ajusta uma direção por posição da imagem e é \emph{inaplicável} quando o número de tokens varia; sua ausência é registrada, não tratada como um teste negativo da versão completa.
+
+REVIS usa a referência \texttt{75f4d29}, com força $1{,}1$ em LLaVA e $2{,}5$ nos outros modelos. Em LLaVA emprega os vetores distribuídos; nos demais, calcula-os com os 100 pares oficiais. A calibração segue o script: percentil 85 sobre 300 perguntas, busca descendente até o bloco 10 e respostas gulosas limitadas a cinco tokens. A escolha pelo script resolve a diferença em relação ao artigo, que menciona percentil $0{,}8$ e 100 imagens, sem introduzir uma calibração própria.
+
+Em LLaVA, avaliamos tanto o bloco 31 selecionado pela calibração e citado no apêndice quanto o bloco 30 da tabela principal do artigo, com seu limiar calibrado. São configurações publicadas conflitantes, não camadas escolhidas pelo desempenho deste estudo. Os limiares são $0{,}195$ e $-0{,}093$, respectivamente; OneVision seleciona o bloco 21, com $-0{,}073$, e Qwen o bloco 34, com $-0{,}111$. O risco é o cosseno negativo entre estado e vetor, e a intervenção ocorre quando ele ultrapassa o limiar.
+
+As construções de prompt para Qwen3 presentes no código de REVIS são usadas em Qwen3-VL, embora a entrada oficial encaminhe todos os Qwen à construção de Qwen2.5. Prompts sem imagem que ainda contêm marcadores visuais são tokenizados diretamente, mantendo o texto, porque o processador recente os rejeita. As perguntas de calibração são geradas uma vez e observadas em todas as camadas, preservando os riscos sem repetir a geração por camada.
+
+Cada controle substitui apenas o conteúdo aprendido por um sorteio: VTI recebe direções de mesma forma, normalizadas pela mesma operação; REVIS recebe um vetor de mesma norma e mantém camada, limiar, força e regra de ativação. Isso separa informação específica da direção do efeito de perturbar o modelo. Em REVIS, contudo, o vetor também determina onde a porta abre: igualar a norma não iguala o número de intervenções. Relatamos essa assimetria em vez de interpretar todo contraste com o controle como efeito semântico puro.
+
+VISTA e Nullu são relacionados, não condições com resultados principais. Seus padrões para modelos novos são, respectivamente, força $0{,}1$ e posto 8 nos blocos 16 a 31; não substituímos a ausência de execução por uma alegação de ineficácia. MME é executado em cada configuração efetivamente avaliada, inclusive nas duas forças de VTI em LLaVA, para medir o custo no ponto em que o benefício é alegado.
+
+\subsection{Tarefas e métricas}
+O experimento principal utiliza POPE adversarial completo: 3000 perguntas sobre 500 imagens COCO val2014. A escolha de objetos ausentes que coocorrem com os presentes confronta a inferência por plausibilidade da cena. Os subconjuntos aleatório e popular existem no registro, mas não sustentam os resultados principais deste artigo. RePOPE reutiliza as respostas, remove 316 perguntas e altera 172 rótulos, isolando o efeito da anotação sem nova geração.
+
+Mantemos as perguntas de POPE como publicadas e o extrator oficial. A variante que acrescenta ``Please answer yes or no.'' é somente análise de sensibilidade, porque modifica o comportamento e, em REVIS, a porta calibrada. POPE e MME têm limite de 64 novos tokens; trata-se de uma decisão uniforme onde o benchmark não fixa extensão, não de uma garantia de que respostas explicativas nunca sejam truncadas.
+
+CHAIR utiliza as 500 imagens da execução gulosa de LLaVA distribuída com OPERA, a instrução ``Please describe this image in detail.'' e 512 novos tokens. Essa escolha resolve as liberdades deixadas pela métrica e fixa as mesmas oportunidades de descrição para cada condição. MME usa 1187 imagens, duas perguntas por imagem e 14 subtarefas, para medir capacidade além da presença de objetos.
+
+Apresentamos F1 com \textit{yes ratio}, a proporção de respostas ``sim'', porque F1 mistura discriminação e decisão. A AUROC ordena as perguntas pela margem de sim sobre não do primeiro token, sem fixar limiar. A sensibilidade $d'$ e o critério $c$ complementam essa análise: $d'$ estima separação pelas taxas de acertos e falsos positivos, enquanto $c$ descreve a preferência de resposta. Diferentemente da AUROC, o $d'$ empírico depende das respostas extraídas e de hipóteses da teoria de detecção; não o tratamos como invariável a qualquer mudança de limiar ou de formato.
+
+CHAIR por descrição ($S$) e por instância ($I$) são acompanhados de recall de objetos e comprimento em palavras. O \emph{atalho de recall} trunca descrições do modelo original até a cobertura do método: a parcela reproduzida por esse procedimento não demonstra melhor percepção. Em POPE, o atalho altera o limiar da margem original até obter o yes ratio do método, separando uma mudança de critério de uma melhora na ordenação.
+
+A verificação de repetição examina os últimos 300 caracteres: um período de até 80 caracteres cobrindo 85\% das posições, ou até 20 palavras repetidas pelo menos três vezes, caracteriza um ciclo. Textos não cíclicos são fragmentados quando suas linhas têm no máximo duas palavras ou menos de 35\% de letras. Essa checagem distingue descrições longas de geração degenerada; comparações em subconjuntos sem falhas são auxiliares, pois mudam a população avaliada.
+
+\subsection{Estatística e critério de ganho}
+Usamos os intervalos percentis de 95\% registrados, com 1000 reamostragens \textit{bootstrap} por imagem, mantendo juntas as perguntas da mesma imagem. Diferenças em relação ao modelo original são pareadas nas mesmas reamostragens, porque os métodos respondem aos mesmos itens. O teste exato de McNemar compara itens corrigidos e degradados; sua hipótese se refere à discordância de acertos, não diretamente a qualquer métrica cujo registro contém o mesmo valor de $p$.
+
+O procedimento de Holm corrige as comparações entre métodos e tarefas de um modelo. Distinguimos melhora pontual, evidência estatística e ganho interpretável: uma queda de CHAIR com ciclos não constitui ganho, e uma mudança explicada pelo controle ou atalho não estabelece maior discriminação. Não recalculamos testes ausentes dos documentos; identificamos explicitamente os valores corrigidos disponíveis e os testes não corrigidos da sensibilidade.
+
+A capacidade é avaliada também no total de MME sem existência, contagem, posição e cor, evitando que o mesmo domínio defina simultaneamente benefício e custo. A não inferioridade usa margem de 2\% do escore original desse conjunto e o limite inferior do intervalo pareado. Falhar em demonstrar não inferioridade não prova inferioridade; um intervalo amplo pode ser inconclusivo.
+
+\subsection{Ambiente e desvios de execução}
+LLaVA foi avaliado em A100-SXM4-80GB, com Python 3.13.16, PyTorch 2.14.1+cu130, Transformers 5.23.0 e precisão FP16. OneVision foi avaliado em RTX 4090, com PyTorch 2.14.1+cu126 e torchvision 0.29.1+cu126, pois o driver 550 não executava a versão CUDA 13.0 fixada. Qwen foi avaliado em H100 80GB, Python 3.13.18, PyTorch 2.14.1+cu130 e Transformers 5.23.0, em bfloat16, com revisão \texttt{0c351dd0}. Preservamos essas diferenças para representar a evidência disponível, sem afirmar igualdade numérica entre placas.
+
+No H100, sete das 40 respostas iniciais diferiam entre a referência nativa e o adaptador; repetições da própria referência também produziam logits diferentes. Desabilitar somente cuDNN SDPA restaurou igualdade nas 40 perguntas, inclusive dos logits no diagnóstico específico. A política passou ao construtor comum, sem alterar prompts ou geração; não foi aplicada retroativamente aos resultados históricos de LLaVA e não demonstra determinismo universal. A execução completa de Qwen foi retomada após interrupção do nó com código e ambiente idênticos.
+
+OneVision exigiu compatibilidade com seu código originalmente escrito para Transformers 4.53: mapeamento de pesos, reconstrução dos buffers rotativos, tratamento de argumentos e configuração de preenchimento. A validação rejeita pesos ausentes e buffers não finitos; as primeiras 40 respostas binárias coincidiram com o ambiente antigo, embora descrições longas possam divergir em empates próximos de bfloat16. Isso delimita o alcance da equivalência.
+
+O processador Hugging Face de LLaVA redimensiona o lado menor para 336 pixels e recorta o centro, ao contrário do preenchimento quadrado original. Mantivemos o processador do checkpoint para consistência entre condições, mas analisamos a visibilidade das caixas COCO, pois o recorte pode ocultar objetos. Os modelos novos preservam o aspecto com dimensões compatíveis com patches.
+
+Os diagnósticos regionais foram executados em L4; a sensibilidade sim/não de LLaVA foi parcialmente executada em A100 e parcialmente em L4, desvio que seu último arquivo de ambiente não registra integralmente. Os demais diagnósticos incluem A100 e, para sondas de OneVision, RTX 4090. Os arquivos de tarefas são fixados por revisão e resumo criptográfico, salvo imagens COCO individuais, sem checksum publicado; as respostas preservam proveniência e permitem refazer a pontuação sem gerar novamente.
+
+\subsection{Diagnósticos e suas perguntas}
+\paragraph{Quando a resposta se torna legível?} A logit lens aplica normalização final e projeção ao vocabulário à saída de cada bloco, na posição que prediz a resposta. As sondas lineares são ajustadas sobre as 3000 perguntas com validação cruzada em cinco partições por imagem, para detectar informação antes de a cabeça final conseguir lê-la. Sondas reajustadas sob intervenção são comparadas à sonda original aplicada aos estados modificados, distinguindo perda de informação de mudança de coordenadas.
+
+\paragraph{Onde a intervenção modifica a representação?} O \textit{residual shift}, deslocamento do fluxo residual, compara estados originais e modificados no mesmo item, por bloco, em 50 imagens. Sua magnitude localiza o efeito, mas não mede a utilidade da informação adicionada.
+
+\paragraph{O erro já é favorecido pela linguagem?} Repetimos as perguntas sem o trecho da imagem e comparamos a margem resultante à coocorrência do objeto com os objetos anotados, estimada em COCO train2014. Assim separam-se preferência pelo nome perguntado e plausibilidade contextual da cena; o rótulo diagnóstico ``sim incorreto'' usa a margem do primeiro token, não necessariamente a resposta amostrada e extraída.
+
+\paragraph{O codificador reconhece o objeto?} Sondas por categoria são ajustadas em 5000 imagens de treino, na média dos tokens após cada bloco visual e no projetor ou agregador. Como essa média dilui objetos pequenos, uma segunda análise usa os patches das caixas de cada objeto, com até 300 caixas por categoria em ordem determinística e apenas caixas com ao menos metade visível e um token. A AUROC regional distingue uma categoria das demais, com média sobre as 66 categorias elegíveis; a AUROC de omissões compara objetos presentes reconhecidos e omitidos. São tarefas diferentes da discriminação de objetos ausentes em POPE.
+
+\paragraph{Por qual rota a informação passa?} O knockout bloqueia atenção resposta--imagem, texto--imagem ou resposta--texto em janelas de nove camadas, com amostras de até 200 ``sim'' incorretos e 200 respostas corretas. O patching copia estados de um ``não'' correto à mesma pergunta em outra imagem, variando bloco e grupo de posições: imagem, palavra do objeto e resposta. Mede-se a fração mediana da diferença entre margens restaurada; para comprimentos variáveis, buscam-se sequências de mesmo tamanho, tentando até 20 parceiros. Em Qwen, as reinjeções DeepStack nos primeiros três blocos podem sobrescrever parcialmente os estados visuais copiados, que são identificados como reinjetados.
+
+\paragraph{A quais regiões se associa o erro?} A atenção ponderada por norma é somada entre cabeças e agrupada em imagem, região do objeto consultado e demais objetos, usando caixas mapeadas à grade processada. A análise por item relaciona erros, correções, alterações de rótulos, mudanças do primeiro token e subtarefas de MME, para evitar que médias ocultem artefatos do extrator ou classes sistematicamente problemáticas.

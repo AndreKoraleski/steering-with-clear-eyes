@@ -1,0 +1,109 @@
+\section{Resultados}
+\subsection{Q1: as receitas reduzem alucinação?}
+\input{sections/tabela_pope}
+\input{sections/tabela_chair}
+As Tabelas~\ref{tab:pope} e~\ref{tab:chair} comparam os três modelos sob as mesmas tarefas. Em POPE, VTI eleva o F1 de LLaVA de $0{,}802$ para $0{,}807$, mas seu controle chega a $0{,}808$. O intervalo pareado do ganho de VTI, $0{,}005$ [$-0{,}003$; $0{,}013$], inclui zero. REVIS no bloco 31 não muda as respostas binárias; no bloco 30, reduz F1 para $0{,}787$. Em RePOPE, VTI chega a $0{,}817$, enquanto REVIS no bloco 30 cai para $0{,}770$. A correção de rótulos não estabelece uma vantagem geral de steering.
+
+Em OneVision, as diferenças de F1 de métodos e controles são pequenas: nenhuma é significativa após Holm, com $p$ corrigido de pelo menos $0{,}27$ nos testes registrados. A AUROC de POPE permanece entre $0{,}940$ e $0{,}942$. Em Qwen, REVIS fica próximo do original, mas não é idêntico: corrige 13 respostas e degrada 18. VTI reduz F1 de $0{,}871$ para $0{,}848$ em POPE e de $0{,}912$ para $0{,}863$ em RePOPE. Seu controle perde menos, e a queda muito maior do controle de REVIS exige a análise do extrator apresentada em Q2.
+
+CHAIR oferece uma resposta inicialmente mais favorável, mas dependente da validade das descrições. Em LLaVA, VTI na configuração CHAIR reduz $S$ de $0{,}502$ para $0{,}366$; REVIS no bloco 31 o eleva para $0{,}602$ e no bloco 30 o reduz para $0{,}320$. Em OneVision, REVIS reduz $S$ de $0{,}334$ para $0{,}256$, diferença de $-7{,}8$ pontos percentuais [$-12{,}2$; $-3{,}4$], significativa após Holm ($p=0{,}012$). Em Qwen, os valores $0{,}094$ de VTI e $0{,}030$ de REVIS não constituem ganhos utilizáveis: são acompanhados de geração degenerada e perda de cobertura. Portanto, Q1 não recebe uma resposta positiva uniforme, mesmo antes de considerar capacidade geral.
+
+\subsection{Q2: controles, atalhos e custo de capacidade}
+\subsubsection{F1 não basta para identificar melhor discriminação}
+O pequeno ganho de VTI em LLaVA acompanha queda do yes ratio de $0{,}617$ para $0{,}579$, reproduzida em parte pelo controle. A AUROC, ao contrário, cai em $0{,}009$, com IC [$-0{,}013$; $-0{,}004$]; não há evidência de melhor ordenação dos objetos presentes e ausentes. REVIS no bloco 30 eleva o yes ratio para $0{,}689$ sem melhora correspondente de AUROC. Seu controle produz deslocamento semelhante, menor.
+
+Nos modelos novos, VTI desloca a resposta na direção oposta: o yes ratio aumenta para $0{,}488$ em OneVision e $0{,}578$ em Qwen. Em OneVision, $d'$ cai de $2{,}29$ para $2{,}20$, com diferença $-0{,}09$ [$-0{,}16$; $-0{,}04$]; em Qwen, a AUROC fica próxima da original e $d'$ cai de $2{,}25$ para $2{,}06$. Esses padrões não sustentam uma melhora visual oculta pelo F1.
+
+O controle de REVIS em Qwen frequentemente escreve a negação em negrito, por exemplo \texttt{**not**}. O extrator oficial reconhece palavras nuas como \texttt{No}, \texttt{not} e \texttt{no}, e classifica muitas dessas respostas como afirmativas. O yes ratio extraído chega a $0{,}821$, contra $0{,}575$ pelas probabilidades do primeiro token. A AUROC permanece próxima à original: a queda de F1 para $0{,}706$ e de $d'$ para $0{,}94$ é em grande parte um artefato de extração, não uma medida direta de perda visual.
+
+\begin{table}[t]
+\centering\small
+\caption{Sensibilidade ao acréscimo da instrução sim/não: F1 de POPE, original $\rightarrow$ variante. Qwen provém do relato metodológico; os demais, do CSV.}
+\label{tab:yn}
+\setlength{\tabcolsep}{2pt}
+\begin{tabular}{lccc}\toprule
+Condição & LLaVA & OneVision & Qwen \\
+\midrule
+Original & $0{,}802\to0{,}826$ & $0{,}866\to0{,}866$ & $0{,}871\to0{,}869$ \\
+VTI & $0{,}807\to0{,}811$ & $0{,}863\to0{,}866$ & $0{,}848\to0{,}867$ \\
+VTI aleat. & $0{,}808\to0{,}821$ & $0{,}869\to0{,}867$ & $0{,}863\to0{,}870$ \\
+REVIS & $0{,}802\to0{,}818$ & $0{,}867\to0{,}865$ & $0{,}869\to0{,}859$ \\
+REVIS aleat. & $0{,}802\to0{,}825$ & $0{,}862\to0{,}868$ & $0{,}706\to0{,}872$ \\
+REVIS b30 & $0{,}787\to0{,}829$ & --- & --- \\
+REVIS aleat. b30 & $0{,}795\to0{,}829$ & --- & --- \\
+\bottomrule\end{tabular}
+\end{table}
+
+A análise de sensibilidade confirma a dependência do formato (Tabela~\ref{tab:yn}). Em LLaVA, a instrução reduz o yes ratio original a $0{,}453$; VTI passa de vantagem pontual a perda em relação ao original da variante, e REVIS b30 passa de perda a vantagem pontual. Os respectivos testes de McNemar da variante são não corrigidos, $p=0{,}18$ e $p=0{,}56$, e não estabelecem benefício. Em OneVision, nenhuma mudança de F1 excede $0{,}003$ nos dois conjuntos de rótulos, com $p$ de McNemar de pelo menos $0{,}26$.
+
+Em Qwen, a variante produz respostas de uma palavra no original e nos controles. O controle de REVIS passa a F1 $0{,}872$, removendo a grande queda associada à formatação. VTI fica próximo do original em POPE, mas ainda perde $1{,}5$ ponto de F1 em RePOPE. REVIS reduz a AUROC da variante de $0{,}944$ para $0{,}929$, e 51 respostas atingem o limite repetindo ``actually''. Não substituímos o protocolo principal por essa variante mais favorável a algumas condições.
+
+\subsubsection{Cobertura e degeneração das descrições}
+Em LLaVA, VTI reduz o comprimento médio de $91{,}4$ para $71{,}3$ palavras e o recall de $0{,}808$ para $0{,}759$. O relato do atalho indica que truncar as descrições originais explica a maior parte da queda de CHAIR, sem fornecer um valor residual que permita quantificá-la aqui. REVIS b30 também reduz recall, para $0{,}646$, e apresenta 14 descrições em ciclo. Seu controle tem CHAIR ainda menor, mas 181 descrições degeneradas; essa comparação não identifica superioridade do vetor aleatório nem um ganho líquido confiável do método.
+
+Em OneVision, REVIS encurta as descrições de $168{,}6$ para $118{,}3$ palavras e reduz recall de $0{,}680$ para $0{,}633$. O original truncado ao recall do método atinge CHAIR$_S$ de $27{,}5$\%: somente $1{,}9$ ponto percentual fica além do atalho. O controle de REVIS alonga as descrições para $380{,}6$ palavras; 186 atingem o limite, mas nenhuma apresenta ciclo ou fragmentação. Sua piora de CHAIR, $5{,}0$ pontos [$-0{,}2$; $10{,}6$], não é significativa após Holm ($p=0{,}73$). A diferença de $12{,}8$ pontos entre método e controle mistura, portanto, comportamentos de extensão opostos.
+
+VTI em OneVision gera 34 ciclos e 97 descrições fragmentadas. Nas 369 imagens em que nenhuma condição apresenta essas falhas, seu CHAIR$_S$ é $37{,}9$\%, contra $33{,}1$\% do original; a diferença é $4{,}8$ pontos [$-0{,}5$; $10{,}3$]. A aparente vantagem em CHAIR$_I$ na população completa não deve ser isolada da degeneração.
+
+Em Qwen, 330 descrições de VTI e 445 de REVIS têm ciclos ou fragmentos. O recall registrado no CSV cai de $0{,}765$ para $0{,}345$ e $0{,}278$, respectivamente. O relato do atalho informa CHAIR$_S$ de $7{,}8$\% e $3{,}4$\% para descrições originais truncadas, próximos ou melhores que os métodos, mas usa recall de REVIS discrepante do CSV; o pareamento desse último valor requer reconciliação. Não o usamos para estimar ganho residual de REVIS. Mesmo sem esse atalho, a frequência de ciclos impede interpretar $3{,}0$\% como melhora de qualidade.
+
+Restam somente 22 imagens sem degeneração em todas as condições de Qwen. As análises pareadas sem falhas usam populações diferentes e não recuperam uma comparação comum. Já os controles têm um e oito ciclos, respectivamente; removê-los muda CHAIR$_S$ em no máximo $0{,}1$ ponto, confirmando que alcançar o limite de tokens, por si só, não significa repetição.
+
+\subsubsection{O custo em MME}
+\input{sections/tabela_mme}
+A Tabela~\ref{tab:mme} mantém separados o total e as subtarefas fora do domínio de objetos. Em LLaVA, VTI/POPE perde 216 pontos totais, dos quais o relato atribui 70 à contagem; a perda no conjunto de outras capacidades é 133 pontos. REVIS b31 perde 302 pontos, enquanto b30 apresenta diferença total positiva de 43 pontos, com intervalo [$5$; $85$]. Esse contraste reforça a dependência da camada, mas não resolve a validade das descrições de b30.
+
+Em OneVision, nenhum método demonstrou não inferioridade no critério registrado. A diferença total de REVIS, $-15$ [$-39$; $3$], não equivale a comprovar preservação de capacidade. Em Qwen, todos os totais pontuais ficam abaixo do original; REVIS perde 39 pontos, com intervalo [$-65$; $-15$], e VTI perde 21, com intervalo [$-76$; $33$]. Não há um benefício robusto de alucinação que justifique concluir uma melhoria conjunta nas duas dimensões.
+
+\subsection{Q3: onde o erro se forma e como os métodos atuam?}
+\begin{table*}[t]
+\centering\small
+\caption{Diagnósticos comparativos do modelo original, transcritos do relato metodológico. As margens do primeiro token e as execuções diagnósticas não são os escores extraídos da geração principal. As AUROCs de regiões e de POPE correspondem a tarefas diferentes.}
+\label{tab:diag}
+\begin{tabular}{lccc}\toprule
+Leitura & LLaVA & OneVision & Qwen \\
+\midrule
+Sim incorreto entre objetos ausentes, pela margem & 507 & 136 & 231 \\
+Yes ratio com/sem imagem, pela margem & $0{,}617/0{,}817$ & $0{,}463/0{,}925$ & $0{,}521/0{,}195$ \\
+AUROC sem imagem: sim incorreto vs. não correto & $0{,}71$ & $0{,}45$ & $0{,}66$ \\
+AUROC da coocorrência para a mesma distinção & $0{,}63$ & $0{,}61$ & $0{,}66$ \\
+AUROC da sonda visual global, projetor/agregador & $0{,}83$ & $0{,}87$ & $0{,}88$ \\
+AUROC regional, projetor/agregador & $0{,}98$ & $0{,}98$ & $0{,}97$ \\
+Sonda residual: bloco e AUROC antes da lens & 8: $0{,}853$ & 10: $0{,}850$ & 12: $0{,}902$ \\
+Logit lens: início da leitura da resposta & bloco 12 & bloco 18 & bloco 20 \\
+Patching da palavra: bloco e fração restaurada & 11: $0{,}54$ & 15: $0{,}73$ & 15: $0{,}70$ \\
+Patching da resposta: bloco e fração restaurada & 16: $0{,}90$ & 27: $0{,}88$ & 27: $0{,}94$ \\
+Atenção à imagem: sim incorreto/não correto & $19/15$\% & $16{,}7/13{,}1$\% & $13{,}3/11{,}2$\% \\
+Faixa de blocos da leitura de atenção acima & 14--21 & 21--28 & 21--28 \\
+\bottomrule\end{tabular}
+\end{table*}
+
+\subsubsection{Prior linguístico e coocorrência}
+A Tabela~\ref{tab:diag} mostra que a preferência sem imagem depende do modelo. Em LLaVA, a pergunta isolada favorece ``sim'' e sua margem distingue falsos positivos de negativos corretos com AUROC $0{,}71$. Em Qwen, a ausência da imagem favorece ``não'', mas as margens menos negativas ainda se associam aos falsos positivos (AUROC $0{,}66$). OneVision responde afirmativamente a quase todas as perguntas sem imagem; sua margem não distingue os dois grupos melhor que o acaso.
+
+A coocorrência, em contraste, prediz falsos positivos nos três modelos, com AUROC de $0{,}61$ a $0{,}66$. A análise por item concorda: bolsas, mochilas, garrafas e outros objetos plausíveis em várias cenas figuram entre os mais alucinados. A correlação de Spearman entre coocorrência e erro por pergunta é $0{,}22$ em LLaVA, $0{,}12$ em OneVision e $0{,}19$ em Qwen. Trata-se de associação consistente entre modelos, não de identificação causal de cada objeto alucinado.
+
+\subsubsection{O que as sondas conseguem ler}
+Sondas sobre a imagem inteira atingem AUROC de $0{,}83$ a $0{,}88$ nos projetores ou agregadores. Quando leem os patches dos objetos, atingem cerca de $0{,}98$ nos últimos blocos visuais, mostrando que a média global subestima a informação local. Nas regiões presentes omitidas pela resposta, os escores são menores: as AUROCs que distinguem reconhecimento e omissão ficam entre $0{,}68$ e $0{,}75$ nos últimos blocos. Essa evidência alcança omissões de objetos presentes, não falsos positivos sem caixa correspondente.
+
+No fluxo residual, a resposta pode ser lida antes da logit lens. Em LLaVA, a sonda chega a $0{,}905$ no bloco 11 e permanece próxima desse nível; em OneVision, chega a $0{,}939$ no bloco 17; em Qwen, a $0{,}940$ no bloco 16. As sondas reajustadas sob os métodos não mostram informação adicional sistemática. Em LLaVA, VTI reduz a AUROC da sonda do bloco 8 de $0{,}853$ para $0{,}832$, mas o desempenho se recupera nas camadas posteriores.
+
+Aplicar a sonda original aos estados modificados produz perdas bem maiores: sob VTI, ela cai a $0{,}51$--$0{,}53$ nos blocos 4 a 8 de LLaVA. Como uma sonda reajustada ainda lê a resposta, isso evidencia deslocamento da representação, não apagamento equivalente de informação. Em OneVision, REVIS e seu controle deslocam o fluxo a partir do bloco 21, mas as sondas reajustadas permanecem próximas de $0{,}94$. Magnitude de residual shift e legibilidade supervisionada, portanto, não equivalem a correção da decisão.
+
+\subsubsection{Da imagem à pergunta e à resposta}
+O knockout da leitura direta da imagem pela posição de resposta tem pouco efeito nos três modelos. Bloquear a leitura da imagem pelo texto intermediário, em contraste, altera muitos falsos positivos: até 52\% em LLaVA, 60\% em Qwen e 48\% em OneVision nas janelas registradas. Bloquear resposta--texto nas camadas intermediárias desloca a margem para ``sim'', indicando dependência dessa rota para sustentar respostas negativas.
+
+LLaVA tem ainda uma dependência precoce específica: bloquear resposta--texto nas primeiras nove camadas corrige 41\% dos ``sim'' incorretos e altera somente 4\% das respostas corretas. Esse padrão não se repete nos modelos novos. Neles, a leitura que sustenta ``não'' ocorre mais tarde, em faixas aproximadamente entre as camadas 15 e 30; OneVision também apresenta dependência tardia da rota textual para parte dos falsos positivos.
+
+O patching converge com esse percurso. Em LLaVA, a imagem ainda permite recomputar a decisão nos primeiros blocos; a palavra do objeto restaura $0{,}54$ da diferença no bloco 11, e a posição da resposta restaura $0{,}90$ no bloco 16. Nos modelos baseados em Qwen, a palavra concentra efeito nos blocos 13 a 21 e a resposta a partir do bloco 20. Foram obtidos 194 pares em Qwen e 108 em OneVision, pois é necessário igualar o comprimento das sequências. O alinhamento de profundidade entre os dois é compatível com seu decodificador compartilhado, sem provar que o codificador seja irrelevante.
+
+A atenção ponderada por norma é maior sobre a imagem nos falsos positivos, nas faixas em que a decisão se concentra na resposta (Tabela~\ref{tab:diag}). As regiões de outros objetos também recebem maior parcela, em concordância com a associação de coocorrência. Essa leitura contradiz uma explicação universal de ``olhar pouco para a imagem'', mas não permite atribuir causalidade a pesos de atenção individuais.
+
+\subsubsection{Visibilidade e mecanismo das intervenções}
+O recorte de LLaVA deixa 88 dos 1351 objetos presentes com caixa inteiramente fora da imagem e 131 com menos da metade visível. Entre 156 omissões, 34 envolvem objetos fora do recorte, 13 objetos pouco visíveis e 64 objetos sem caixa da categoria consultada. Apenas 45 têm caixa e pelo menos metade visível. Nos modelos novos, as caixas permanecem visíveis após redimensionamento; seus erros não compartilham esse mecanismo de ocultação.
+
+REVIS b31 em LLaVA não altera a probabilidade do primeiro token de nenhuma pergunta do POPE principal, embora mude o texto de 81\% das respostas. Sua porta atua em tokens posteriores e aumenta a extensão das descrições. No último bloco, a intervenção não pode propagar-se a posições posteriores por novos blocos: seu efeito imediato é sobre os logits da posição alterada. O vetor distribuído também apresenta inversão de sinal em relação ao índice anterior, e a normalização final diferencia o estado usado no ajuste da saída bruta do bloco.
+
+Em b30, a porta de método e controle abre no primeiro token de todas as perguntas; o efeito sobre POPE é predominantemente aumento de respostas afirmativas. Em OneVision, a porta de REVIS abre em 86\% das perguntas, mas o vetor tem cosseno $0{,}001$ com a diferença média entre estados de respostas sim e não no bloco 21. Uma grande perturbação pode, assim, ser pouco alinhada à decisão; o fluxo posterior atenua a mudança. A contagem de respostas geradas confirma somente 28 mudanças, enquanto a leitura por primeiro token registra 27.
+
+Em Qwen, a abertura no primeiro token de todas as perguntas é inferida das probabilidades salvas, não contada dentro da intervenção. Ainda assim, o diagnóstico registra mudança mediana de apenas $0{,}0001$ na probabilidade de sim e quatro inversões do primeiro token de POPE. As fortes alterações dos tokens seguintes explicam a degeneração sem exigir melhora de presença de objetos. A documentação também registra uma leitura por item com outro limiar de mudança de probabilidade; não agregamos essas medidas como se fossem a mesma estimativa de intensidade.

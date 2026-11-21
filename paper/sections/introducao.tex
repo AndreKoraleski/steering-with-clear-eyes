@@ -1,0 +1,18 @@
+\section{Introdução}
+Um modelo de visão e linguagem pode afirmar que um objeto está presente mesmo quando a imagem não o contém. Essa alucinação compromete a utilidade de respostas sobre presença e de descrições visuais: uma frase fluente não garante correspondência com a evidência. Métodos de \textit{steering}, isto é, direcionamento das ativações durante a inferência, procuram corrigir esse comportamento sem retreinar o modelo. VTI~\cite{vti} e REVIS~\cite{revis} são exemplos dessa proposta.
+
+A comparação entre publicações, porém, mistura imagens, instruções, limites de geração e procedimentos de extração das respostas. Além disso, responder menos ``sim'' ou descrever menos objetos pode reduzir uma métrica de alucinação sem melhorar a leitura da imagem. Uma intervenção pode ainda degradar tarefas gerais ou produzir repetições que recebem pontuação favorável. Avaliar a receita que um usuário consegue aplicar exige controlar esses fatores e explicitar as adaptações necessárias.
+
+Organizamos o estudo em três perguntas centrais:
+\begin{enumerate}
+\item[\textbf{Q1.}] VTI e REVIS, executados conforme o código e as receitas oficiais, sem ajuste, reduzem alucinação em LLaVA-1.5-7B e em dois modelos não cobertos por seus artigos, LLaVA-OneVision-1.5-8B e Qwen3-VL-8B?
+\item[\textbf{Q2.}] Os ganhos resistem a controles aleatórios de mesma magnitude e aos atalhos de propensão a responder sim, descrições curtas, recall reduzido e repetições? Qual é o custo em capacidade geral, medido por MME?
+\item[\textbf{Q3.}] De onde vem um ``sim'' incorreto em POPE: do conhecimento prévio linguístico, do codificador visual ou das rotas entre imagem, pergunta e resposta no modelo de linguagem? Essa localização ajuda a explicar a ação ou a ausência de efeito dos métodos?
+\end{enumerate}
+
+As contribuições são:
+\begin{itemize}
+\item uma avaliação conjunta das receitas e de seus controles nos três modelos, com adaptações e inaplicabilidades explícitas;
+\item uma leitura dos resultados que separa discriminação, comportamento de resposta e custo de capacidade;
+\item uma análise complementar das representações e rotas de informação que contextualiza os efeitos observados.
+\end{itemize}
