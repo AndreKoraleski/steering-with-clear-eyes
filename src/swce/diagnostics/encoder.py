@@ -30,7 +30,7 @@ from tqdm import tqdm
 
 from swce.diagnostics.attention import Grid, ResizedGrid
 from swce.diagnostics.coco import object_of
-from swce.diagnostics.probe import ITERATIONS, default_device
+from swce.diagnostics.probe import ITERATIONS, default_device, released
 from swce.metrics.yes_no import auroc
 from swce.models.hf import HuggingFaceSubject
 from swce.registry import Registry
@@ -275,9 +275,10 @@ def encoder_task(
     index = {group: row for row, group in enumerate(groups)}
     test_index = np.array([index[item.group] for item in items])
     questions = [(object_of(item.prompt), item.label == "yes") for item in items]
-    frame = probe_encoder(
-        train, [objects for _, objects in training], test, test_index, questions, names
-    )
+    with released(subject):
+        frame = probe_encoder(
+            train, [objects for _, objects in training], test, test_index, questions, names
+        )
     return frame.assign(model=subject.name, task=task)
 
 
@@ -400,8 +401,25 @@ def read_regions(
     subject: HuggingFaceSubject,
     images: Sequence[tuple[Any, Sequence[tuple[str, list[float]]]]],
     desc: str,
+    *,
+    per_category: int | None = None,
 ) -> tuple[dict[str, NDArray[np.float32]], list[tuple[int, str, float]]]:
-    """Read images once and retain pooled regions and their image, category and area."""
+    """Read images once and retain pooled regions and their image, category and area.
+
+    Args:
+        subject: Model whose encoder is read.
+        images: Images or loaders with their category and box annotations.
+        desc: Progress description.
+        per_category: Maximum regions per category, or None to keep all evaluation regions.
+            Select the first eligible boxes in image and annotation order deterministically,
+            before pooling or stacking features.
+
+    Returns:
+        Features by source and the image index, category and area of each retained region.
+    """
+    if per_category is not None and per_category < 1:
+        raise ValueError("per_category must be positive")
+    counts: dict[str, int] = {}
     encoders, projectors = [], []
     regions: list[tuple[int, str, float]] = []
     for index, (image, boxes) in enumerate(tqdm(images, desc=desc, mininterval=30)):
@@ -409,6 +427,13 @@ def read_regions(
         inputs = subject.inputs(image, subject.template(""))
         grid = Grid.of(subject) if subject.fixed_grid else ResizedGrid.of(subject, inputs)
         kept = region_cells(grid, image.width, image.height, boxes)
+        if per_category is not None:
+            selected = []
+            for name, area, cells in kept:
+                if counts.get(name, 0) < per_category:
+                    selected.append((name, area, cells))
+                    counts[name] = counts.get(name, 0) + 1
+            kept = selected
         if not kept:
             continue
         encoder, projector = region_features(subject, inputs, [cells for _, _, cells in kept], grid)
@@ -498,6 +523,7 @@ def encoder_regions_task(
     answers: pd.DataFrame,
     boxes: Mapping[str, tuple[int, int, list[tuple[str, list[float]]]]],
     *,
+    per_category: int = 300,
     limit: int | None = None,
     data: Path | None = None,
     registry: Registry | None = None,
@@ -507,8 +533,14 @@ def encoder_regions_task(
     Training contains images and COCO boxes. Answers are rows of prior.margins, joined by id;
     only positive margins count as yes. Each evaluation image contributes its boxes once,
     regardless of how many questions ask about it. Largest refers to original box area.
+
+    The keyword per_category caps training regions per category at 300 by default, selecting
+    the first eligible boxes in image and annotation order. Evaluation regions are uncapped.
+    The model waits on the processor during fitting and scoring and is restored afterwards.
     """
-    train, train_regions = read_regions(subject, training, "encoder regions train")
+    train, train_regions = read_regions(
+        subject, training, "encoder regions train", per_category=per_category
+    )
     bound = Task(task, data, registry)
     items = bound.items(limit)
     groups = list(dict.fromkeys(item.group for item in items))
@@ -533,12 +565,13 @@ def encoder_regions_task(
         key = (item.group, name)
         if item.label == "yes" and key in largest and item.id in margins:
             questions.append((largest[key], name, margins[item.id] > 0))
-    frame = probe_regions(
-        train,
-        [name for _, name, _ in train_regions],
-        test,
-        [name for _, name, _ in regions],
-        questions,
-        names,
-    )
+    with released(subject):
+        frame = probe_regions(
+            train,
+            [name for _, name, _ in train_regions],
+            test,
+            [name for _, name, _ in regions],
+            questions,
+            names,
+        )
     return frame.assign(model=subject.name, task=task)

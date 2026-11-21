@@ -54,6 +54,12 @@ def main(argv: list[str] | None = None) -> int:
         "--prior", action="store_true", help="answer every question without its image"
     )
     parser.add_argument("--encoder-regions", action="store_true", help="probe object regions")
+    parser.add_argument(
+        "--encoder-regions-per-category",
+        type=int,
+        default=300,
+        help="maximum training boxes per category for region probes",
+    )
     parser.add_argument("--encoder", action="store_true", help="probe the vision encoder")
     parser.add_argument("--knockout", action="store_true", help="block attention routes by window")
     parser.add_argument(
@@ -240,6 +246,7 @@ def localize(subject: Subject, args: argparse.Namespace) -> int:
             categories(),
             answers,
             image_boxes("val"),
+            per_category=args.encoder_regions_per_category,
             limit=limit,
             data=args.data,
         )
