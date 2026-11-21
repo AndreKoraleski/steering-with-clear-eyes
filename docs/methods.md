@@ -235,6 +235,53 @@ images. Its scores are in `results/leaderboard.csv`.
 - Qwen3-VL-8B ran the full experiment, with VTI, REVIS and their controls at `code-default`, as
   [Qwen3-VL-8B](#qwen3-vl-8b) describes.
 
+### The gain of every method against its cost, on the three models
+
+`analysis.csv` and `shortcuts.csv` of every run, computed from `results/leaderboard.csv` with
+the default non-inferiority margin of 2% of MME. A gain is positive when the method improves the
+metric: a higher F1, a lower CHAIR_S. It is tested with McNemar and the Holm correction within
+each model. Beyond control is the gain minus that of the random control of the same setting.
+Beyond shortcut is what the method adds over the unmodified model brought to the same yes ratio
+on POPE, or truncated to the same recall on CHAIR. The capability change is on the MME subtasks
+other than existence, count, position and color, in points.
+
+| Model | Method | Task | Gain [95% CI] | Holm p | Beyond control | Beyond shortcut | MME change [95% CI] |
+|---|---|---|---|---|---|---|---|
+| LLaVA-1.5-7B | REVIS, block 31 | CHAIR | -0.100 [-0.142, -0.056] | < 0.001 | -0.100 | -0.100 | -302 [-362, -242] |
+| LLaVA-1.5-7B | REVIS, block 30 | CHAIR | 0.182 [0.136, 0.234] | < 0.001 | -0.066 | -0.141 | +33 [+3, +69] |
+| LLaVA-1.5-7B | REVIS, block 30 | POPE | -0.015 [-0.023, -0.007] | < 0.001 | -0.008 | -0.001 | +33 [+3, +69] |
+| LLaVA-1.5-7B | VTI, CHAIR setting | CHAIR | 0.136 [0.096, 0.180] | < 0.001 | 0.070 | 0.038 | -8 [-56, +38] |
+| LLaVA-1.5-7B | VTI, POPE setting | POPE | 0.005 [-0.003, 0.013] | 0.27 | -0.001 | -0.002 | -133 [-190, -80] |
+| LLaVA-1.5-7B | VTI, POPE setting | RePOPE | 0.011 [0.001, 0.021] | 0.015 | 0.003 | -0.002 | -133 [-190, -80] |
+| OneVision-1.5-8B | REVIS | CHAIR | 0.078 [0.034, 0.122] | 0.020 | 0.128 | 0.019 | -15 [-39, +3] |
+| OneVision-1.5-8B | REVIS | POPE | 0.001 [-0.003, 0.005] | 1.00 | 0.004 | -0.001 | -15 [-39, +3] |
+| OneVision-1.5-8B | VTI | CHAIR | -0.010 [-0.062, 0.042] | 1.00 | 0.030 | -0.031 | -53 [-100, -9] |
+| OneVision-1.5-8B | VTI | POPE | -0.003 [-0.009, 0.004] | 0.95 | -0.006 | -0.006 | -53 [-100, -9] |
+| Qwen3-VL-8B | REVIS | CHAIR | 0.502 [0.454, 0.548] | < 0.001 | 0.530 | 0.004 | -20 [-39, -7] |
+| Qwen3-VL-8B | REVIS | POPE | -0.002 [-0.005, 0.002] | 0.95 | 0.164 | -0.003 | -20 [-39, -7] |
+| Qwen3-VL-8B | VTI | CHAIR | 0.438 [0.394, 0.486] | < 0.001 | 0.402 | -0.016 | -13 [-62, +37] |
+| Qwen3-VL-8B | VTI | POPE | -0.023 [-0.032, -0.015] | < 0.001 | -0.015 | -0.004 | -13 [-62, +37] |
+
+- **Two gains survive both the control and the shortcut, both on CHAIR.** VTI at its CHAIR setting
+  on LLaVA-1.5-7B lowers CHAIR_S by 13.6 points, 7.0 beyond its control and 3.8 beyond the
+  unmodified descriptions truncated to the same recall. REVIS on OneVision lowers it by 7.8
+  points, 12.8 beyond its control and 1.9 beyond the shortcut. Neither is shown non-inferior on
+  MME, whose intervals reach -56 and -39 points.
+- **No POPE gain survives on any model.** The one significant gain, VTI on RePOPE for
+  LLaVA-1.5-7B, 1.1 points, is what the unmodified model reaches by answering yes as rarely.
+  VTI on Qwen3-VL loses 2.3 points on POPE and 4.9 on RePOPE, mostly beyond its control.
+- **The large CHAIR gains on Qwen3-VL are the shortcut.** Both fall to within 1.6 points of the
+  unmodified descriptions cut to the same recall, and their descriptions loop, as
+  [Loops at the token limit on Qwen3-VL-8B](#loops-at-the-token-limit-on-qwen3-vl-8b) shows.
+  Their gains beyond control, and REVIS's 16.4 points on POPE, rest on controls that do not
+  break the same way, the REVIS control through the parser.
+- **REVIS at block 30 on LLaVA-1.5-7B is the only setting shown non-inferior on MME**, gaining 33
+  points, and it is outdone on CHAIR by its own control. REVIS at block 31 costs 302 points on
+  MME and VTI at its POPE setting 133.
+
+No method, on any model, both improves a hallucination metric beyond its control and its
+shortcut and is shown to keep its general capability.
+
 ### Why REVIS behaves so on LLaVA-1.5-7B
 
 The port follows the official code at every step. The vectors are the ones the authors release,
