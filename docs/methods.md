@@ -928,6 +928,75 @@ control. VTI moves the first answer token of most questions of POPE while changi
 What differs is the direction VTI pushes the answers, toward no on LLaVA-1.5-7B and toward yes on
 OneVision, and that the corrected labels of RePOPE help OneVision and not LLaVA-1.5-7B.
 
+### The vision encoder on the patches of each object
+
+The encoder probes above read the mean over every image token, which dilutes small objects.
+`swce-diagnose --encoder-regions` reads instead the mean over the tokens each COCO box covers, on
+the three models. Probes of the 80 categories are fitted on the boxes of the same 5000 COCO
+train2014 images, at most 300 per category in image order, and read on the 500 images of POPE
+adversarial. Only boxes at least half visible after the crop of LLaVA-1.5 and covering one token
+or more are kept. It ran on one L4.
+
+- **Region AUROC**: on the POPE images, each category's probe scoring the boxes of its category
+  against those of every other, averaged over the 66 categories with ten boxes of each kind.
+- **Missed AUROC**: among present objects with a kept box, how well the probe of the object, on
+  its largest box, separates the questions the model answers yes from those it misses.
+
+| | LLaVA-1.5-7B | OneVision-1.5-8B | Qwen3-VL-8B |
+|---|---|---|---|
+| Boxes read on POPE | 3734 | 4647 | 4647 |
+| Region AUROC, block 0 | 0.78 | 0.77 | 0.78 |
+| Region AUROC, last blocks | 0.98 from block 18 | 0.98 from block 15 | 0.98 from block 18 |
+| Region AUROC, merger | 0.98 | 0.98 | 0.97 |
+| Missed AUROC, last block and merger | 0.74, 0.75 | 0.68, 0.71 | 0.75, 0.70 |
+| Correct yeses, and misses, with a kept box | 1145, 47 | 1203, 148 | 1273, 78 |
+
+- **The encoders see the objects where they are.** On its own patches an object is recognized at
+  an AUROC of 0.98 by the middle of every encoder, against 0.83 to 0.88 for the mean over the
+  image. Most of that gap was the pooling, not the encoder: the encoder is not where the
+  answers are lost.
+- **A miss starts in the encoder more often than a correct yes.** Where the model misses a
+  present object, the probe of that object scores its box lower, with an AUROC of 0.68 to 0.75
+  in the last blocks. Part of the misses are objects the encoder reads weakly, though it reads
+  most of them. LLaVA-1.5-7B has only 47 such misses because most of its misses are objects the
+  crop hides or that have no box.
+- **This does not reach the wrong yeses.** An absent object has no box, so the region reading
+  says nothing about where a wrong yes comes from. The readings above place those in the
+  language model, through the question.
+
+### POPE asked for a yes or no, LLaVA-1.5-7B
+
+`pope-adversarial-yn` and `repope-adversarial-yn` (#37) ran for the unmodified LLaVA-1.5-7B and
+every method setting of its main run, with the vectors and calibrations of that run. Three
+settings were generated on an A100 and the others on an L4 when no A100 was free, a departure
+from one kind of card per model, which the `setting.json` of the run, written last on the L4,
+does not record. McNemar p values here are uncorrected.
+
+| | Unmodified | VTI, POPE | VTI control | REVIS, block 31 | REVIS, block 30 | REVIS control, block 30 |
+|---|---|---|---|---|---|---|
+| F1 as written | 0.802 | 0.807 | 0.808 | 0.802 | 0.787 | 0.795 |
+| F1 asked for a yes or no | 0.826 | 0.811 | 0.821 | 0.818 | 0.829 | 0.829 |
+| Yes ratio as written, and asked | 0.617, 0.453 | 0.579, 0.411 | 0.590, 0.435 | 0.617, 0.438 | 0.689, 0.477 | 0.664, 0.492 |
+| AUROC asked | 0.910 | 0.903 | 0.908 | 0.900 | 0.909 | 0.910 |
+| RePOPE F1 asked | 0.868 | 0.850 | 0.866 | 0.858 | 0.864 | 0.862 |
+
+- **The instruction removes most of the bias toward yes.** The unmodified model answers yes to 45%
+  of the questions instead of 62%, its F1 rises from 0.802 to 0.826 and d' from 1.68 to 1.98,
+  while its AUROC stays at 0.91. Much of its low precision as written is the sentence it is
+  asked, not what it sees.
+- **The small changes of the methods depend on the question.** As written, VTI gains 0.005 F1
+  (p 0.017) and REVIS at block 30 loses 0.015 (p < 0.001). Asked for a yes or no, VTI loses
+  0.015 (p 0.18), turning 92 correct yeses into misses, and REVIS at block 30 gains 0.002 (p
+  0.56). Neither sign survives the change of wording, so no method improves POPE on this model.
+- **REVIS at block 31 acts only on the instruction.** As written its gate never opens at the first
+  answer token. With "Please answer yes or no." it moves the first token of 43% of the
+  questions and changes 1.7% of the answers, breaking 33 and fixing 17, a loss of 0.008 F1 (p
+  0.033). The same sentence opened the gate on MME, and on Qwen3-VL-8B it makes REVIS move the
+  first token of far more questions.
+- **This matches the other models.** On OneVision no method changes POPE asked either way, and on
+  Qwen3-VL the fall of the REVIS control as written was the parser. On every model the
+  question format moves the yes ratio more than any method does.
+
 ### Qwen3-VL-8B
 
 The main experiment ran on `qwen3-vl-8b` as run `job-37620`: Slurm job 37620 until a node-wide
